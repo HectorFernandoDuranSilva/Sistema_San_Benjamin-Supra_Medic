@@ -10,6 +10,16 @@ services:
       - ./database/database.sqlite:/var/www/html/database/database.sqlite
       - app-storage:/var/www/html/storage
 
+  scheduler:
+    image: sanbenjamin-app:latest
+    restart: unless-stopped
+    command: php artisan schedule:work --no-interaction
+    env_file:
+      - .env
+    volumes:
+      - ./database/database.sqlite:/var/www/html/database/database.sqlite
+      - app-storage:/var/www/html/storage
+
   web:
     image: sanbenjamin-web:latest
     restart: unless-stopped
