@@ -1,0 +1,24 @@
+version: "3.3"
+
+services:
+  app:
+    image: sanbenjamin-app:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./database/database.sqlite:/var/www/html/database/database.sqlite
+      - app-storage:/var/www/html/storage
+
+  web:
+    image: sanbenjamin-web:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - app-storage:/var/www/html/storage:ro
+    depends_on:
+      - app
+
+volumes:
+  app-storage:
