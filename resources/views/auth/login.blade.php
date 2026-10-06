@@ -26,14 +26,13 @@
 
             <div class="field">
                 <label>Usuario</label>
-                <input type="text" name="username" value="{{ old('username', 'admin123') }}" autocomplete="username" required autofocus>
+                <input type="text" name="username" value="{{ old('username') }}" autocomplete="username" required autofocus>
             </div>
             <div class="field">
                 <label>Contrasena</label>
-                <input type="password" name="password" value="admin123" autocomplete="current-password" required>
+                <input type="password" name="password" autocomplete="current-password" required>
             </div>
             <button type="submit" style="width:100%;">Entrar</button>
-            <div class="login-note">Usuario inicial: admin123</div>
         </form>
     </div>
 </section>
