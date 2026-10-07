@@ -202,7 +202,7 @@ function addSelectedItem() {
     const porcentaje = parseFloat(document.getElementById('porcentaje-utilidad').value || product.margin || '27');
     const descuento = parseFloat(document.getElementById('descuento-producto').value || '0');
     const lote = document.getElementById('lote-producto').value || '';
-    const vencimiento = document.getElementById('vencimiento-producto').value || '';
+    const vencimiento = normalizeDateValue(document.getElementById('vencimiento-producto').value || '');
 
     tr.innerHTML = `
         <td>${product.codigo}<input type="hidden" name="items[${idx}][producto_id]" value="${product.id}"></td>
@@ -228,6 +228,17 @@ function addSelectedItem() {
     idx++;
     document.getElementById('lote-producto').value = '';
     document.getElementById('vencimiento-producto').value = '';
+}
+
+function normalizeDateValue(value) {
+    const trimmed = String(value || '').trim();
+    const match = trimmed.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+
+    if (! match) {
+        return trimmed;
+    }
+
+    return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
 }
 
 function updateRow(tr) {
@@ -276,7 +287,12 @@ document.querySelector('form[action="{{ route('compras.store') }}"]').addEventLi
     if (document.querySelectorAll('#items tbody tr').length === 0) {
         event.preventDefault();
         document.getElementById('compra-items-alert').classList.add('is-open');
+        return;
     }
+
+    document.querySelectorAll('.item-vencimiento').forEach(function (input) {
+        input.value = normalizeDateValue(input.value);
+    });
 });
 
 refreshSelectedProduct();

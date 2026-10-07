@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
 
 class PurchaseRequest extends FormRequest
@@ -32,5 +33,33 @@ class PurchaseRequest extends FormRequest
             'items.*.fecha_vencimiento' => ['nullable', 'date'],
             'items.*.impuesto' => ['nullable', 'numeric', 'min:0'],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $items = collect($this->input('items', []))
+            ->map(function ($item) {
+                $fechaVencimiento = trim((string) ($item['fecha_vencimiento'] ?? ''));
+
+                if ($fechaVencimiento !== '' && preg_match('/^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}$/', $fechaVencimiento)) {
+                    $fechaIngresada = str_replace('-', '/', $fechaVencimiento);
+
+                    try {
+                        $fecha = CarbonImmutable::createFromFormat('!d/m/Y', $fechaIngresada);
+
+                        // Evita aceptar fechas inexistentes, como 31/02/2029.
+                        if ($fecha !== false && $fecha->format('d/m/Y') === $fechaIngresada) {
+                            $item['fecha_vencimiento'] = $fecha->format('Y-m-d');
+                        }
+                    } catch (\Throwable) {
+                        // La regla de validacion mostrara el error correspondiente.
+                    }
+                }
+
+                return $item;
+            })
+            ->all();
+
+        $this->merge(['items' => $items]);
     }
 }
