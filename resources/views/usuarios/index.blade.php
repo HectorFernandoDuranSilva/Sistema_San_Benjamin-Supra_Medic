@@ -82,12 +82,16 @@
                     <div class="actions" style="gap:8px;">
                         <button form="usuario-edit-{{ $usuario->id }}" class="btn secondary">Guardar</button>
                         @if(! $usuario->is(auth()->user()))
-                            <form method="post" action="{{ route('usuarios.destroy', $usuario) }}" data-glass-confirm="Esta acción desactivara el usuario. ¿Desea continuar?">
-                                @csrf
-                                @method('delete')
-                                <input name="totp_code" inputmode="numeric" maxlength="32" placeholder="Código Authenticator" required>
-                                <button class="btn danger">Desactivar</button>
-                            </form>
+                            <details>
+                                <summary class="btn danger">Eliminar usuario</summary>
+                                <form method="post" action="{{ route('usuarios.destroy', $usuario) }}" data-glass-confirm="El usuario dejará de poder ingresar al sistema. Su historial se conservará. ¿Desea continuar?" style="margin-top:8px;min-width:250px;">
+                                    @csrf
+                                    @method('delete')
+                                    <label for="totp-code-{{ $usuario->id }}">Código de Google Authenticator</label>
+                                    <input id="totp-code-{{ $usuario->id }}" name="totp_code" inputmode="numeric" autocomplete="one-time-code" maxlength="32" placeholder="Código de 6 dígitos o recuperación" required>
+                                    <button class="btn danger" style="margin-top:8px;">Confirmar eliminación</button>
+                                </form>
+                            </details>
                         @endif
                     </div>
                 </td>

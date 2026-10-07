@@ -106,7 +106,7 @@ class UserManagementController extends Controller
             'Usuario desactivado'
         );
 
-        return back()->with('ok', 'Usuario desactivado.');
+        return back()->with('ok', 'Usuario eliminado del acceso al sistema. Se conservó su historial registrado.');
     }
 
     private function validateUser(Request $request, ?User $usuario = null): array

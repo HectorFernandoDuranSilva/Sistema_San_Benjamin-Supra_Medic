@@ -12,6 +12,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Cerrar una sesión no cambia información de negocio. Permitirlo aun con una
+        // página abierta antes de que su token CSRF venza evita dejar al usuario atrapado.
+        $middleware->validateCsrfTokens(except: ['logout']);
+
         $middleware->alias([
             'permission' => \App\Http\Middleware\EnsureUserHasPermission::class,
         ]);

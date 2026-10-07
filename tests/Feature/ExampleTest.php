@@ -20,9 +20,12 @@ use App\Services\InventoryService;
 use App\Services\PurchaseService;
 use App\Services\QuotationService;
 use App\Services\SaleService;
+use App\Services\TwoFactorAuthenticationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use PragmaRX\Google2FA\Google2FA;
 use Tests\TestCase;
 
 class ExampleTest extends TestCase
@@ -34,6 +37,18 @@ class ExampleTest extends TestCase
         $this->get('/')->assertRedirect('/dashboard');
         $this->get('/dashboard')->assertRedirect('/login');
         $this->get('/login')->assertOk();
+    }
+
+    public function test_logout_succeeds_even_when_a_previous_page_has_an_expired_csrf_token(): void
+    {
+        $user = User::factory()->create(['activo' => true]);
+
+        $this->actingAs($user)
+            ->withMiddleware(ValidateCsrfToken::class)
+            ->post(route('logout'))
+            ->assertRedirect('/login');
+
+        $this->assertGuest();
     }
 
     public function test_login_requires_commercial_selection_before_dashboard(): void
@@ -2844,6 +2859,9 @@ class ExampleTest extends TestCase
     public function test_admin_can_create_and_deactivate_user_safely(): void
     {
         $admin = User::factory()->create(['role' => 'administrador', 'activo' => true]);
+        $twoFactor = app(TwoFactorAuthenticationService::class);
+        $secret = $twoFactor->generateSecret();
+        $twoFactor->confirmEnrollment($admin, $secret, app(Google2FA::class)->getCurrentOtp($secret));
 
         $this->actingAs($admin)
             ->post(route('usuarios.store'), [
@@ -2869,7 +2887,9 @@ class ExampleTest extends TestCase
         $this->assertArrayNotHasKey('password', $createAudit->valores_nuevos ?? []);
 
         $this->actingAs($admin)
-            ->delete(route('usuarios.destroy', $operator))
+            ->delete(route('usuarios.destroy', $operator), [
+                'totp_code' => app(Google2FA::class)->getCurrentOtp($secret),
+            ])
             ->assertRedirect();
 
         $this->assertFalse($operator->fresh()->activo);
