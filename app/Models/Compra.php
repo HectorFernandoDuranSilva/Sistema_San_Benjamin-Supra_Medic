@@ -17,6 +17,7 @@ class Compra extends Model
         'factura',
         'nit_proveedor',
         'subtotal',
+        'descuento_total',
         'impuesto_total',
         'total',
         'estado',
@@ -29,6 +30,7 @@ class Compra extends Model
         return [
             'fecha' => 'date',
             'subtotal' => 'decimal:2',
+            'descuento_total' => 'decimal:2',
             'impuesto_total' => 'decimal:2',
             'total' => 'decimal:2',
         ];

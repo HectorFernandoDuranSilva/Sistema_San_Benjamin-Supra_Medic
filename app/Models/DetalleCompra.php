@@ -15,10 +15,13 @@ class DetalleCompra extends Model
         'nombre_producto',
         'cantidad',
         'costo_unitario',
+        'costo_neto_unitario',
         'porcentaje_utilidad',
+        'descuento_porcentaje',
         'codigo_lote',
         'fecha_vencimiento',
         'subtotal',
+        'descuento',
         'impuesto',
         'total',
     ];
@@ -28,9 +31,12 @@ class DetalleCompra extends Model
         return [
             'cantidad' => 'decimal:2',
             'costo_unitario' => 'decimal:2',
+            'costo_neto_unitario' => 'decimal:4',
             'porcentaje_utilidad' => 'decimal:2',
+            'descuento_porcentaje' => 'decimal:2',
             'fecha_vencimiento' => 'date',
             'subtotal' => 'decimal:2',
+            'descuento' => 'decimal:2',
             'impuesto' => 'decimal:2',
             'total' => 'decimal:2',
         ];

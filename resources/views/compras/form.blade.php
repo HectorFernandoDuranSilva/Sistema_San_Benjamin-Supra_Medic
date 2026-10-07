@@ -51,7 +51,8 @@
         </select>
     </div>
     <div class="field"><label>Comentario</label><input name="observacion" value="{{ old('observacion') }}"></div>
-    <div class="field"><label>Descuento %</label><input id="porcentaje-utilidad" type="number" step="0.01" min="25" max="30" value="27"></div>
+    <div class="field"><label>Utilidad %</label><input id="porcentaje-utilidad" type="number" step="0.01" min="25" max="30" value="27"></div>
+    <div class="field"><label>Descuento proveedor %</label><input id="descuento-producto" type="number" step="0.01" min="0" max="100" value="0"></div>
 </div>
 
 <div class="row">
@@ -86,14 +87,15 @@
     <table id="items">
         <thead>
             <tr>
-                <th>Código</th><th>Producto</th><th>Marca</th><th>Procedencia</th><th>Cantidad</th><th>Costo Unit</th><th>Desc %</th><th>Lote</th><th>Vencimiento</th><th>Subtotal</th><th>Impuesto</th><th>Total</th><th></th>
+                <th>Código</th><th>Producto</th><th>Marca</th><th>Procedencia</th><th>Cantidad</th><th>Costo Unit</th><th>Utilidad %</th><th>Desc. %</th><th>Lote</th><th>Vencimiento</th><th>Subtotal</th><th>Descuento</th><th>Impuesto</th><th>Total</th><th></th>
             </tr>
         </thead>
         <tbody></tbody>
         <tfoot>
             <tr>
-                <th colspan="9" style="text-align:right;">Totales</th>
+                <th colspan="10" style="text-align:right;">Totales</th>
                 <th id="total-subtotal">0.00</th>
+                <th id="total-descuento">0.00</th>
                 <th id="total-impuesto">0.00</th>
                 <th id="total-final">0.00</th>
                 <th></th>
@@ -198,6 +200,7 @@ function addSelectedItem() {
     const cantidad = parseFloat(document.getElementById('cantidad-producto').value || '1');
     const costo = parseFloat(document.getElementById('costo-producto').value || product.cost || '0');
     const porcentaje = parseFloat(document.getElementById('porcentaje-utilidad').value || product.margin || '27');
+    const descuento = parseFloat(document.getElementById('descuento-producto').value || '0');
     const lote = document.getElementById('lote-producto').value || '';
     const vencimiento = document.getElementById('vencimiento-producto').value || '';
 
@@ -209,9 +212,11 @@ function addSelectedItem() {
         <td><input class="item-cantidad" type="number" step="0.01" min="0.01" name="items[${idx}][cantidad]" value="${money(cantidad)}"></td>
         <td><input class="item-costo" type="number" step="0.01" min="0" name="items[${idx}][costo_unitario]" value="${money(costo)}"></td>
         <td><input class="item-porcentaje" type="number" step="0.01" min="25" max="30" name="items[${idx}][porcentaje_utilidad]" value="${money(porcentaje)}"></td>
+        <td><input class="item-descuento-porcentaje" type="number" step="0.01" min="0" max="100" name="items[${idx}][descuento_porcentaje]" value="${money(descuento)}"></td>
         <td><input class="item-lote" name="items[${idx}][codigo_lote]" value="${lote.replace(/"/g, '&quot;')}"></td>
         <td><input class="item-vencimiento" type="date" name="items[${idx}][fecha_vencimiento]" value="${vencimiento}"></td>
         <td class="item-subtotal">0.00</td>
+        <td class="item-descuento">0.00</td>
         <td><input class="item-impuesto" type="number" step="0.01" min="0" name="items[${idx}][impuesto]" value="0.00"></td>
         <td class="item-total">0.00</td>
         <td><button type="button" class="btn secondary" onclick="this.closest('tr').remove(); updateTotals();">Quitar</button></td>
@@ -228,27 +233,33 @@ function addSelectedItem() {
 function updateRow(tr) {
     const cantidad = parseFloat(tr.querySelector('.item-cantidad').value || '0');
     const costo = parseFloat(tr.querySelector('.item-costo').value || '0');
+    const descuentoPorcentaje = parseFloat(tr.querySelector('.item-descuento-porcentaje').value || '0');
     const impuesto = parseFloat(tr.querySelector('.item-impuesto').value || '0');
     const subtotal = cantidad * costo;
-    const total = subtotal + impuesto;
+    const descuento = subtotal * (descuentoPorcentaje / 100);
+    const total = subtotal - descuento + impuesto;
 
     tr.querySelector('.item-subtotal').textContent = money(subtotal);
+    tr.querySelector('.item-descuento').textContent = money(descuento);
     tr.querySelector('.item-total').textContent = money(total);
     updateTotals();
 }
 
 function updateTotals() {
     let subtotal = 0;
+    let descuento = 0;
     let impuesto = 0;
     let total = 0;
 
     document.querySelectorAll('#items tbody tr').forEach(tr => {
         subtotal += parseFloat(tr.querySelector('.item-subtotal').textContent || '0');
+        descuento += parseFloat(tr.querySelector('.item-descuento').textContent || '0');
         impuesto += parseFloat(tr.querySelector('.item-impuesto').value || '0');
         total += parseFloat(tr.querySelector('.item-total').textContent || '0');
     });
 
     document.getElementById('total-subtotal').textContent = money(subtotal);
+    document.getElementById('total-descuento').textContent = money(descuento);
     document.getElementById('total-impuesto').textContent = money(impuesto);
     document.getElementById('total-final').textContent = money(total);
 }

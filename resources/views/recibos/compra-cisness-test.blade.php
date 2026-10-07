@@ -264,8 +264,9 @@
         @foreach($detalles as $detalle)
             @php
                 $detalleImpuesto = (float) ($detalle->impuesto ?? 0);
+                $detalleDescuento = (float) ($detalle->descuento ?? 0);
                 $detalleTotal = (float) ($detalle->total ?? 0);
-                $detalleTotal = $detalleTotal > 0 ? $detalleTotal : ((float) $detalle->subtotal + $detalleImpuesto);
+                $detalleTotal = $detalleTotal > 0 ? $detalleTotal : ((float) $detalle->subtotal - $detalleDescuento + $detalleImpuesto);
             @endphp
             <tr>
                 <td class="center">{{ $detalle->codigo_producto }}</td>
@@ -273,7 +274,7 @@
                 <td class="center">{{ $detalle->producto?->medida ?: 'PIEZAS' }}</td>
                 <td class="center">{{ $qty($detalle->cantidad) }}</td>
                 <td class="right"><span class="money-currency">Bs</span><span class="money-value">{{ $money($detalle->costo_unitario) }}</span></td>
-                <td class="right">{{ number_format((float) $detalle->porcentaje_utilidad, 2) }}%</td>
+                <td class="right"><span class="money-currency">Bs</span><span class="money-value">{{ $detalleDescuento > 0 ? $money($detalleDescuento) : '-' }}</span></td>
                 <td class="right"><span class="money-currency">Bs</span><span class="money-value">{{ $money($detalle->subtotal) }}</span></td>
                 <td class="right"><span class="money-currency">Bs</span><span class="money-value">{{ $detalleImpuesto > 0 ? $money($detalleImpuesto) : '-' }}</span></td>
                 <td class="right"><span class="money-currency">Bs</span><span class="money-value">{{ $money($detalleTotal) }}</span></td>
@@ -283,7 +284,7 @@
             <td></td>
             <td class="bold center">Total</td>
             <td colspan="3"></td>
-            <td class="right bold"><span class="money-currency">Bs</span><span class="money-value">-</span></td>
+            <td class="right bold"><span class="money-currency">Bs</span><span class="money-value">{{ (float) ($compra->descuento_total ?? 0) > 0 ? $money($compra->descuento_total) : '-' }}</span></td>
             <td class="right bold"><span class="money-currency">Bs</span><span class="money-value">{{ $money($compra->subtotal) }}</span></td>
             <td class="right bold"><span class="money-currency">Bs</span><span class="money-value">{{ (float) ($compra->impuesto_total ?? 0) > 0 ? $money($compra->impuesto_total) : '-' }}</span></td>
             <td class="right bold"><span class="money-currency">Bs</span><span class="money-value">{{ $money($compra->total) }}</span></td>
