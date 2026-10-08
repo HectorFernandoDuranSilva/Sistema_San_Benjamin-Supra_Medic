@@ -216,7 +216,11 @@ class QuotationService
 
     private function siguienteNumero(): string
     {
-        $next = ((int) Cotizacion::max('id')) + 1;
+        $next = Cotizacion::query()
+            ->where('numero_cotizacion', 'like', 'CT-%')
+            ->pluck('numero_cotizacion')
+            ->map(fn (string $numero) => preg_match('/^CT-(\d+)$/', $numero, $matches) ? (int) $matches[1] : 0)
+            ->max() + 1;
 
         return 'CT-' . str_pad((string) $next, 6, '0', STR_PAD_LEFT);
     }
