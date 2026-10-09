@@ -62,7 +62,7 @@ class QuotationController extends Controller
                 'margin' => $p->porcentaje_utilidad,
             ])->values(),
             'commercial' => session('commercial_context'),
-            'siguienteNumero' => 'CT-' . str_pad((string) (((int) Cotizacion::max('id')) + 1), 6, '0', STR_PAD_LEFT),
+            'siguienteNumero' => app(QuotationService::class)->siguienteNumero(),
             'tipoCambioActual' => $tipoCambioActual,
             'tipoCambioValor' => $tipoCambioValor,
             'footerDefaults' => $this->footerDefaults($cotizacion?->nombre_comercial ?? session('commercial_context.name', 'San Benjamin')),

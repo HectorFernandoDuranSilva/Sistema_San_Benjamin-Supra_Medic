@@ -16,12 +16,12 @@ class DocumentNumberSequenceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_new_document_sequences_ignore_imported_history_and_continue_from_the_last_native_number(): void
+    public function test_new_document_sequences_continue_from_the_highest_imported_or_native_number(): void
     {
         $user = User::factory()->create();
 
         Venta::create([
-            'numero_venta' => 'EXCEL-V-955', 'fecha' => '2026-10-01', 'subtotal' => 1, 'total' => 1,
+            'numero_venta' => 'EXCEL-V-990', 'fecha' => '2026-10-01', 'subtotal' => 1, 'total' => 1,
             'estado' => 'registrada', 'usuario_id' => $user->id,
         ]);
         Venta::create([
@@ -29,7 +29,7 @@ class DocumentNumberSequenceTest extends TestCase
             'estado' => 'registrada', 'usuario_id' => $user->id,
         ]);
         Compra::create([
-            'numero_compra' => 'EXCEL-C-391', 'fecha' => '2026-10-01', 'subtotal' => 1, 'total' => 1,
+            'numero_compra' => 'EXCEL-C-394', 'fecha' => '2026-10-01', 'subtotal' => 1, 'total' => 1,
             'estado' => 'registrada', 'usuario_id' => $user->id,
         ]);
         Compra::create([
@@ -45,9 +45,9 @@ class DocumentNumberSequenceTest extends TestCase
             'estado' => 'emitida', 'usuario_id' => $user->id,
         ]);
 
-        $this->assertSame('V-000946', $this->nextNumber(SaleService::class));
-        $this->assertSame('C-000389', $this->nextNumber(PurchaseService::class));
-        $this->assertSame('CT-000017', $this->nextNumber(QuotationService::class));
+        $this->assertSame('V-000991', $this->nextNumber(SaleService::class));
+        $this->assertSame('C-000395', $this->nextNumber(PurchaseService::class));
+        $this->assertSame('CT-000121', $this->nextNumber(QuotationService::class));
     }
 
     private function nextNumber(string $service): string

@@ -214,12 +214,11 @@ class QuotationService
         });
     }
 
-    private function siguienteNumero(): string
+    public function siguienteNumero(): string
     {
         $next = Cotizacion::query()
-            ->where('numero_cotizacion', 'like', 'CT-%')
             ->pluck('numero_cotizacion')
-            ->map(fn (string $numero) => preg_match('/^CT-(\d+)$/', $numero, $matches) ? (int) $matches[1] : 0)
+            ->map(fn (string $numero) => preg_match('/^(?:EXCEL-)?CT-(\d+)(?:-\d+)?$/', $numero, $matches) ? (int) $matches[1] : 0)
             ->max() + 1;
 
         return 'CT-' . str_pad((string) $next, 6, '0', STR_PAD_LEFT);

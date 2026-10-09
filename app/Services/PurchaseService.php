@@ -113,12 +113,11 @@ class PurchaseService
         });
     }
 
-    private function siguienteNumero(): string
+    public function siguienteNumero(): string
     {
         $next = Compra::query()
-            ->where('numero_compra', 'like', 'C-%')
             ->pluck('numero_compra')
-            ->map(fn (string $numero) => preg_match('/^C-(\d+)$/', $numero, $matches) ? (int) $matches[1] : 0)
+            ->map(fn (string $numero) => preg_match('/^(?:EXCEL-)?C-(\d+)(?:-\d+)?$/', $numero, $matches) ? (int) $matches[1] : 0)
             ->max() + 1;
 
         return 'C-' . str_pad((string) $next, 6, '0', STR_PAD_LEFT);

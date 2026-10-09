@@ -49,7 +49,7 @@ class SaleController extends Controller
         return view('ventas.index', compact('ventas', 'filters'));
     }
 
-    public function create(Request $request)
+    public function create(Request $request, SaleService $sales)
     {
         $rate = (float) (TipoCambio::where('estado', 'vigente')->latest('fecha')->latest('id')->value('valor') ?: TipoCambio::ultimoValor());
         $productos = Producto::with(['lotes' => fn ($query) => $query
@@ -88,7 +88,7 @@ class SaleController extends Controller
             'commercial' => session('commercial_context'),
             'tipoDocumento' => $request->routeIs('notas.*') || $request->query('tipo_documento') === 'nota_entrega' ? 'nota_entrega' : 'factura',
             'esModuloNotas' => $request->routeIs('notas.*'),
-            'siguienteNumero' => ($request->routeIs('notas.*') ? 'NE-' : 'V-') . str_pad((string) (((int) Venta::max('id')) + 1), 6, '0', STR_PAD_LEFT),
+            'siguienteNumero' => $sales->siguienteNumero(),
         ]);
     }
 

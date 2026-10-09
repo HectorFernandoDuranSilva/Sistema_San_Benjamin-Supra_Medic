@@ -156,12 +156,11 @@ class SaleService
         });
     }
 
-    private function siguienteNumero(): string
+    public function siguienteNumero(): string
     {
         $next = Venta::query()
-            ->where('numero_venta', 'like', 'V-%')
             ->pluck('numero_venta')
-            ->map(fn (string $numero) => preg_match('/^V-(\d+)$/', $numero, $matches) ? (int) $matches[1] : 0)
+            ->map(fn (string $numero) => preg_match('/^(?:EXCEL-)?V-(\d+)(?:-\d+)?$/', $numero, $matches) ? (int) $matches[1] : 0)
             ->max() + 1;
 
         return 'V-' . str_pad((string) $next, 6, '0', STR_PAD_LEFT);
