@@ -30,7 +30,7 @@ Route::get('/design-options/{style}/{screen}', function (string $style, string $
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
-    Route::post('/login', [AuthController::class, 'login'])->name('login.store');
+    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login')->name('login.store');
 });
 
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth')->name('logout');
@@ -121,6 +121,6 @@ Route::middleware('auth')->group(function () {
     Route::resource('usuarios', UserManagementController::class)->only(['index', 'store', 'update', 'destroy'])->middleware('permission:usuarios');
 
     Route::get('/importar/excel', [ImportExcelController::class, 'index'])->middleware('permission:importar')->name('importar.excel');
-    Route::post('/importar/excel/preview', [ImportExcelController::class, 'preview'])->middleware('permission:importar')->name('importar.preview');
+    Route::post('/importar/excel/preview', [ImportExcelController::class, 'preview'])->middleware(['permission:importar', 'throttle:excel-import'])->name('importar.preview');
     Route::post('/importar/excel/confirmar', [ImportExcelController::class, 'confirm'])->middleware('permission:importar')->name('importar.confirm');
 });

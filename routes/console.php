@@ -10,3 +10,4 @@ Artisan::command('inspire', function () {
 
 Schedule::command('bcb:actualizar-tipo-cambio')->dailyAt('07:30')->withoutOverlapping();
 Schedule::command('bcb:actualizar-tipo-cambio')->dailyAt('12:00')->withoutOverlapping();
+Schedule::command('sistema:respaldar-base')->dailyAt('02:15')->withoutOverlapping();

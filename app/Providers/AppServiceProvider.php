@@ -5,7 +5,11 @@ namespace App\Providers;
 use App\Models\TipoCambio;
 use App\Services\BcbExchangeRateService;
 use App\Services\ProductPricingService;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Throwable;
@@ -25,6 +29,21 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        RateLimiter::for('login', static function (Request $request): array {
+            $username = Str::lower((string) $request->input('username'));
+
+            return [
+                Limit::perMinute(5)->by('login-user:'.$username.'|'.$request->ip()),
+                Limit::perMinute(20)->by('login-ip:'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('excel-import', static function (Request $request): Limit {
+            $identity = $request->user()?->id ?? $request->ip();
+
+            return Limit::perMinute(3)->by('excel-import:'.$identity);
+        });
+
         View::composer(['auth.login', 'auth.select-commercial', 'dashboard'], function ($view): void {
             $tipoCambioActual = null;
 

@@ -39,16 +39,16 @@ class ExampleTest extends TestCase
         $this->get('/login')->assertOk();
     }
 
-    public function test_logout_succeeds_even_when_a_previous_page_has_an_expired_csrf_token(): void
+    public function test_logout_requires_a_valid_csrf_token(): void
     {
         $user = User::factory()->create(['activo' => true]);
 
         $this->actingAs($user)
             ->withMiddleware(ValidateCsrfToken::class)
             ->post(route('logout'))
-            ->assertRedirect('/login');
+            ->assertStatus(419);
 
-        $this->assertGuest();
+        $this->assertAuthenticatedAs($user);
     }
 
     public function test_login_requires_commercial_selection_before_dashboard(): void

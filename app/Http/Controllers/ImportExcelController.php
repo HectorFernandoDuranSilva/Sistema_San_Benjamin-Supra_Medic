@@ -15,7 +15,9 @@ class ImportExcelController extends Controller
 
     public function preview(Request $request, ExcelImportService $service)
     {
-        $request->validate(['excel' => ['required', 'file', 'mimes:xls,xlsx,xlsm']]);
+        $request->validate([
+            'excel' => ['required', 'file', 'mimes:xls,xlsx,xlsm', 'extensions:xls,xlsx,xlsm', 'max:10240'],
+        ]);
         $path = $request->file('excel')->store('imports');
         $preview = $service->preview(storage_path('app/private/' . $path));
         session(['excel_import_path' => $path, 'excel_import_preview' => $preview]);

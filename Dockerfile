@@ -3,7 +3,8 @@ FROM node:22-bookworm-slim AS assets
 WORKDIR /app
 
 COPY package.json ./
-RUN npm install --no-audit --no-fund
+COPY package-lock.json ./
+RUN npm ci --no-audit --no-fund
 
 COPY resources ./resources
 COPY public ./public
