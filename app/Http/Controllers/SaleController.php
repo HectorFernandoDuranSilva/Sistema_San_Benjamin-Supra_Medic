@@ -47,7 +47,25 @@ class SaleController extends Controller
             ->paginate(20)
             ->withQueryString();
 
-        return view('ventas.index', compact('ventas', 'filters'));
+        $notasCoincidentes = collect();
+        if (! empty($filters['buscar'])) {
+            $buscar = '%' . trim($filters['buscar']) . '%';
+            $notasCoincidentes = Venta::with('cliente')
+                ->where('tipo_documento', 'nota_entrega')
+                ->where(function ($query) use ($buscar) {
+                    $query->where('numero_venta', 'like', $buscar)
+                        ->orWhere('factura', 'like', $buscar)
+                        ->orWhere('nit_cliente', 'like', $buscar)
+                        ->orWhereHas('cliente', fn ($cliente) => $cliente->coincideConBusqueda($buscar));
+                })
+                ->when($filters['nombre_comercial'] ?? null, fn ($query, $nombre) => $query->where('nombre_comercial', $nombre))
+                ->when($filters['anio'] ?? null, fn ($query, $anio) => $query->whereYear('fecha', $anio))
+                ->orderByDesc('fecha')
+                ->limit(5)
+                ->get();
+        }
+
+        return view('ventas.index', compact('ventas', 'filters', 'notasCoincidentes'));
     }
 
     public function create(Request $request, SaleService $sales)

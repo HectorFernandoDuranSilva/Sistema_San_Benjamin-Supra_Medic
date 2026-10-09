@@ -10,6 +10,14 @@
     </div>
     <button class="btn secondary">Buscar facturas</button>
 </form>
+@if($notasCoincidentes->isNotEmpty())
+<div class="alert-item" style="margin-bottom:12px;">
+    <strong><span>El resultado está registrado como nota de entrega</span><span>{{ $notasCoincidentes->count() }}</span></strong>
+    @foreach($notasCoincidentes as $nota)
+        <small><a href="{{ route('notas.show', $nota) }}">{{ $nota->numero_venta }}</a> · {{ $nota->cliente?->nombre_mostrable ?? 'Sin cliente' }} · {{ $nota->fecha->format('d/m/Y') }} · Bs {{ number_format($nota->total, 2) }}</small>
+    @endforeach
+</div>
+@endif
 <div class="card"><table><tr><th>No.</th><th>Orden</th><th>Documento</th><th>Fecha</th><th>Factura</th><th>NIT</th><th>Cliente</th><th>Total</th><th>Documento</th><th>Pago</th><th>Usuario</th><th></th></tr>
 @foreach($ventas as $venta)
 @php($cobrado = (float) ($venta->cobrado ?? 0))

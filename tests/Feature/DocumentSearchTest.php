@@ -71,6 +71,23 @@ class DocumentSearchTest extends TestCase
             ->assertSee('INSTITUTO MARIANO - MONTEAGUDO');
     }
 
+    public function test_sales_search_points_to_a_matching_delivery_note_without_mixing_it_with_invoices(): void
+    {
+        $user = $this->signIn();
+        $cliente = Cliente::create(['nombre' => 'Laboratorio Copacabana', 'documento' => '1109235014', 'activo' => true]);
+        Venta::create([
+            'numero_venta' => 'EXCEL-V-982', 'nombre_comercial' => 'Supra Medic', 'tipo_documento' => 'nota_entrega',
+            'cliente_id' => $cliente->id, 'fecha' => '2026-10-07', 'nit_cliente' => '1109235014',
+            'subtotal' => 234.9, 'total' => 234.9, 'estado' => 'registrada', 'usuario_id' => $user->id,
+        ]);
+
+        $this->get(route('ventas.index', ['buscar' => 'EXCEL-V-982', 'anio' => 2026]))
+            ->assertOk()
+            ->assertSee('El resultado está registrado como nota de entrega')
+            ->assertSee('EXCEL-V-982')
+            ->assertSee('Laboratorio Copacabana');
+    }
+
     public function test_purchases_searches_notes_and_invoices_by_number_supplier_nit_year_and_company(): void
     {
         $user = $this->signIn();
