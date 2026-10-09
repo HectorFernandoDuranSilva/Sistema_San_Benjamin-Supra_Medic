@@ -42,6 +42,7 @@ class SaleController extends Controller
             ->when($filters['nombre_comercial'] ?? null, fn ($query, $nombre) => $query->where('nombre_comercial', $nombre))
             ->when($filters['anio'] ?? null, fn ($query, $anio) => $query->whereYear('fecha', $anio))
             ->latest('fecha')
+            ->orderByRaw("CASE WHEN numero_venta LIKE 'EXCEL-V-%' THEN CAST(SUBSTR(numero_venta, 9) AS INTEGER) ELSE id END DESC")
             ->latest('id')
             ->paginate(20)
             ->withQueryString();
