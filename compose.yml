@@ -4,6 +4,8 @@ services:
   app:
     image: sanbenjamin-app:latest
     restart: unless-stopped
+    command: >
+      sh -c 'chown www-data:www-data database && chmod 770 database && chmod 660 database/database.sqlite && exec php-fpm'
     env_file:
       - .env
     volumes:
@@ -13,7 +15,8 @@ services:
   scheduler:
     image: sanbenjamin-app:latest
     restart: unless-stopped
-    command: php artisan schedule:work --no-interaction
+    command: >
+      sh -c 'chown www-data:www-data database && chmod 770 database && chmod 660 database/database.sqlite && exec php artisan schedule:work --no-interaction'
     env_file:
       - .env
     volumes:
