@@ -77,6 +77,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/ventas/{venta}/editar-historial', [SaleController::class, 'editHistory'])->middleware('permission:ventas')->name('ventas.historial.edit');
     Route::put('/ventas/{venta}/editar-historial', [SaleController::class, 'updateHistory'])->middleware('permission:ventas')->name('ventas.historial.update');
     Route::post('/ventas/{venta}/anular', [SaleController::class, 'anular'])->middleware('permission:ventas')->name('ventas.anular');
+    Route::delete('/ventas/{venta}', [SaleController::class, 'destroy'])->middleware('permission:ventas')->name('ventas.destroy');
     Route::get('/ventas/{venta}/recibo', [SaleController::class, 'recibo'])->middleware('permission:ventas')->name('ventas.recibo');
     Route::get('/ventas/{venta}/pdf', [SaleController::class, 'pdf'])->middleware('permission:ventas')->name('ventas.pdf');
     Route::get('/ventas/{venta}/recibo-prueba-lotes', [SaleController::class, 'reciboLotesPrueba'])->middleware('permission:ventas')->name('ventas.recibo-lotes-prueba');

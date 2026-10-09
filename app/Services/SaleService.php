@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Producto;
+use App\Models\MovimientoInventario;
 use App\Models\Venta;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -177,6 +178,49 @@ class SaleService
         });
     }
 
+    /**
+     * Removes a document entered in error and leaves the inventory ledger as if
+     * the document had never been registered. Payments deliberately prevent
+     * deletion because they are accounting records that must not be orphaned.
+     *
+     * @return array<string, mixed>
+     */
+    public function eliminarDefinitivamente(Venta $venta): array
+    {
+        return DB::transaction(function () use ($venta) {
+            $venta = Venta::whereKey($venta->id)->lockForUpdate()->firstOrFail();
+            $venta->load('detalles.producto', 'detalles.lotes.lote');
+
+            if ($venta->cobros()->exists()) {
+                throw new InvalidArgumentException('El documento tiene cobros registrados o anulados. Regularice los cobros antes de eliminarlo definitivamente.');
+            }
+
+            $before = $venta->only([
+                'id', 'numero_venta', 'tipo_documento', 'nombre_comercial', 'fecha', 'factura', 'total', 'estado',
+            ]);
+            $productosAfectados = $venta->detalles->pluck('producto_id')->unique()->filter()->values();
+
+            // An annulled document already returned its lots. A registered one has not.
+            if ($venta->estado !== 'anulada') {
+                foreach ($venta->detalles as $detalle) {
+                    $this->inventory->devolverLotesDeVenta($detalle);
+                }
+            }
+
+            MovimientoInventario::where('referencia_tipo', 'venta')
+                ->where('referencia_id', $venta->id)
+                ->delete();
+
+            $venta->delete();
+
+            foreach ($productosAfectados as $productoId) {
+                $this->recalcularMovimientosProducto((int) $productoId);
+            }
+
+            return $before;
+        });
+    }
+
     public function siguienteNumero(): string
     {
         $next = Venta::query()
@@ -190,6 +234,64 @@ class SaleService
     private function lineAmount(array $item, string $key, float $default = 0): float
     {
         return max(0, (float) ($item[$key] ?? $default));
+    }
+
+    /**
+     * Movement rows store running balances. After a historical document is
+     * removed, every later balance for that product must be rebuilt as well.
+     */
+    private function recalcularMovimientosProducto(int $productoId): void
+    {
+        $producto = Producto::whereKey($productoId)->lockForUpdate()->first();
+        if (! $producto) {
+            return;
+        }
+
+        $stock = 0.0;
+        $valor = 0.0;
+        $valorConocido = true;
+        $movimientos = MovimientoInventario::where('producto_id', $productoId)
+            ->orderBy('fecha_movimiento')
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($movimientos as $movimiento) {
+            $cantidad = (float) $movimiento->cantidad;
+            $entrada = in_array($movimiento->tipo_movimiento, ['entrada', 'ajuste_positivo', 'devolucion', 'anulacion'], true);
+            $stockAnterior = $stock;
+            $valorAnterior = $valorConocido ? $valor : null;
+            $costo = $movimiento->costo_valoracion === null ? null : (float) $movimiento->costo_valoracion;
+
+            if ($costo === null && $valorConocido && $stockAnterior > 0) {
+                $costo = $valor / $stockAnterior;
+            }
+
+            $stock = round($stockAnterior + ($entrada ? $cantidad : -$cantidad), 2);
+            if ($valorConocido && $costo !== null) {
+                $valor = round($valor + ($entrada ? 1 : -1) * $cantidad * $costo, 6);
+            } elseif ($stock !== 0) {
+                $valorConocido = false;
+            }
+
+            if ($stock == 0.0) {
+                $valor = 0.0;
+                $valorConocido = true;
+            }
+
+            $movimiento->forceFill([
+                'stock_anterior' => $stockAnterior,
+                'stock_nuevo' => $stock,
+                'costo_valoracion' => $costo,
+                'valor_anterior' => $valorAnterior,
+                'valor_nuevo' => $valorConocido ? $valor : null,
+            ])->save();
+        }
+
+        $producto->forceFill([
+            'valor_inventario' => $valorConocido ? $valor : null,
+            'costo_promedio' => $valorConocido && $stock > 0 ? round($valor / $stock, 6) : null,
+        ])->save();
     }
 
     private function registrarCuotas(Venta $venta, array $cuotas): void

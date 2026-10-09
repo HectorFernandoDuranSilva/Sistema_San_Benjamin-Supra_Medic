@@ -13,6 +13,12 @@
         @if($venta->estado !== 'anulada')
             <form method="post" action="{{ route('ventas.anular', $venta) }}" data-glass-confirm="¿Anular este documento y devolver el stock?">@csrf<input name="totp_code" inputmode="numeric" maxlength="32" placeholder="Código Authenticator" required><button class="btn danger">Anular</button></form>
         @endif
+        <form method="post" action="{{ route('ventas.destroy', $venta) }}" data-glass-confirm="La eliminación es definitiva. Se restaurará el inventario únicamente si este documento seguía registrado. ¿Desea eliminarlo?">
+            @csrf
+            @method('DELETE')
+            <input name="totp_code" inputmode="numeric" maxlength="32" placeholder="Código Authenticator" required>
+            <button class="btn danger">Eliminar definitivamente</button>
+        </form>
     </div>
 </div>
 

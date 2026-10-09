@@ -214,6 +214,32 @@ class SaleController extends Controller
         return back()->with('ok', $venta->tipo_documento === 'nota_entrega' ? 'Nota de entrega anulada y stock devuelto.' : 'Venta anulada y stock devuelto.');
     }
 
+    public function destroy(Request $request, Venta $venta, SaleService $service)
+    {
+        $request->validate(['totp_code' => ['required', 'string', 'max:32']]);
+        if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'ventas', $venta, 'Intento de eliminar definitivamente una venta')) {
+            return back()->withErrors(['totp_code' => $error]);
+        }
+
+        try {
+            $before = $service->eliminarDefinitivamente($venta);
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['venta' => $e->getMessage()]);
+        }
+
+        app(AuditLogService::class)->record(
+            $request,
+            'elimino_definitivamente',
+            'ventas',
+            $venta,
+            $before,
+            null,
+            'Eliminación definitiva de documento y reconstrucción de inventario.'
+        );
+
+        return redirect()->route('ventas.index')->with('ok', 'Documento eliminado definitivamente. El correlativo se reutilizará solo si era el último número emitido.');
+    }
+
     public function recibo(Venta $venta)
     {
         return Pdf::loadView('recibos.venta', $this->receiptData($venta) + ['isPdf' => true])
