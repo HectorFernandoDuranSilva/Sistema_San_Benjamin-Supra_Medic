@@ -8,8 +8,8 @@ No se incluye el archivo `.env` real, logs, base de datos local de prueba ni arc
 
 ## Credenciales de prueba
 
-- Usuario: `admin123`
-- Contrasena: `admin123`
+- Usuario: el definido por el administrador durante la instalacion.
+- Contrasena: la definida por el administrador durante la instalacion.
 
 ## Actualizacion sobre una version anterior
 

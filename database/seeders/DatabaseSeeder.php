@@ -17,16 +17,22 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        User::updateOrCreate(
-            ['email' => env('ADMIN_EMAIL', 'admin@sistema.local')],
-            [
-                'name' => env('ADMIN_NAME', 'Administrador'),
-                'username' => env('ADMIN_USERNAME', 'admin123'),
-                'role' => 'administrador',
-                'activo' => true,
-                'password' => env('ADMIN_PASSWORD', 'admin123'),
-            ]
-        );
+        $email = env('ADMIN_EMAIL');
+        $username = env('ADMIN_USERNAME');
+        $password = env('ADMIN_PASSWORD');
+
+        if ($email && $username && $password) {
+            User::updateOrCreate(
+                ['email' => $email],
+                [
+                    'name' => env('ADMIN_NAME', 'Administrador'),
+                    'username' => $username,
+                    'role' => 'administrador',
+                    'activo' => true,
+                    'password' => $password,
+                ]
+            );
+        }
 
         ConfiguracionEmpresa::firstOrCreate([], [
             'nombre_negocio' => 'San Benjamin',

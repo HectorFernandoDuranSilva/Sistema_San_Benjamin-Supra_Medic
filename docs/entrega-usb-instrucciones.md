@@ -21,7 +21,7 @@ La carpeta `ENTREGA_USB` esta preparada para copiarse a una memoria USB y ejecut
 ## Acceso inicial
 
 - Usuario: `admin@sanbenjamin.local`
-- Contrasena: `Cambiar123!`
+- Contrasena: la definida por el administrador durante la instalacion.
 
 Estas credenciales son para demostracion local y deben cambiarse antes de un uso real.
 

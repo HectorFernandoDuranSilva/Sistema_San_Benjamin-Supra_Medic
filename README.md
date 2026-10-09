@@ -21,16 +21,12 @@ php artisan migrate --seed
 php artisan serve
 ```
 
-Usuario inicial por defecto:
-
-- Email: `admin@sanbenjamin.local`
-- Clave: `Cambiar123!`
-
-Cambia estos valores en `.env` antes de ejecutar seeders en produccion:
+Antes de ejecutar los seeders en producción, defina un administrador único en `.env`:
 
 ```env
 ADMIN_NAME=Administrador
 ADMIN_EMAIL=admin@tudominio.com
+ADMIN_USERNAME=usuario-administrador
 ADMIN_PASSWORD=clave-segura
 ```
 
