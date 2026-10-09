@@ -39,7 +39,7 @@ return [
         'auto_update_on_web' => env('BCB_AUTO_UPDATE_ON_WEB', true),
         'auto_update_interval_hours' => env('BCB_AUTO_UPDATE_INTERVAL_HOURS', 4),
         'exchange_rate_url' => env('BCB_EXCHANGE_RATE_URL', 'https://www.bcb.gob.bo/librerias/indicadores/otras/ultimo.php'),
-        'verify_ssl' => env('BCB_VERIFY_SSL', false),
+        'verify_ssl' => env('BCB_VERIFY_SSL', true),
         'timeout' => env('BCB_TIMEOUT', 15),
         'retries' => env('BCB_RETRIES', 2),
         'retry_sleep_ms' => env('BCB_RETRY_SLEEP_MS', 500),
