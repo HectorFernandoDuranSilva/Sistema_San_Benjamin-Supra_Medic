@@ -10,7 +10,7 @@
     </div>
 @endif
 
-@if($errors->any())
+@if(($errors ?? null)?->any())
     <div class="glass-modal-backdrop is-open" role="dialog" aria-modal="true">
         <div class="glass-modal is-error">
             <h2>Revise la información</h2>
