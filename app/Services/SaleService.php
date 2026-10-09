@@ -24,6 +24,14 @@ class SaleService
 
         return DB::transaction(function () use ($data, $items, $usuarioId) {
             $esNotaEntrega = ($data['tipo_documento'] ?? 'factura') === 'nota_entrega';
+            $permitirSalidaSinStock = $esNotaEntrega && (bool) ($data['permitir_salida_sin_stock'] ?? false);
+            $motivoSalidaSinStock = trim((string) ($data['motivo_salida_sin_stock'] ?? ''));
+            if (! $esNotaEntrega && $permitirSalidaSinStock) {
+                throw new InvalidArgumentException('La entrega sin stock solo está disponible para notas de entrega.');
+            }
+            if ($permitirSalidaSinStock && $motivoSalidaSinStock === '') {
+                throw new InvalidArgumentException('Indique el motivo de la entrega sin stock.');
+            }
             if (($data['plan_pago'] ?? 'contado') === 'cuotas' && ! Schema::hasTable('venta_cuotas')) {
                 throw new InvalidArgumentException('La actualización de la base de datos está pendiente. No se puede registrar una venta en cuotas todavía.');
             }
@@ -51,7 +59,7 @@ class SaleService
                     throw new InvalidArgumentException('Detalle de venta inválido: revise cantidad, precio y montos.');
                 }
 
-                if ($this->inventory->stockDisponibleParaVenta($producto) < $cantidad) {
+                if ($this->inventory->stockDisponibleParaVenta($producto) < $cantidad && ! $permitirSalidaSinStock) {
                     throw new InvalidArgumentException("Stock vigente insuficiente para {$producto->codigo} - {$producto->nombre}.");
                 }
 
@@ -81,6 +89,8 @@ class SaleService
                 'total' => max(0, $total),
                 'estado' => 'registrada',
                 'observacion' => $data['observacion'] ?? null,
+                'permitir_salida_sin_stock' => $permitirSalidaSinStock,
+                'motivo_salida_sin_stock' => $permitirSalidaSinStock ? $motivoSalidaSinStock : null,
                 'usuario_id' => $usuarioId,
             ]);
 
@@ -117,12 +127,23 @@ class SaleService
                     $detalle,
                     $cantidad,
                     ! empty($item['inventario_lote_id']) ? (int) $item['inventario_lote_id'] : null,
-                    $item['fecha_vencimiento'] ?? null
+                    $item['fecha_vencimiento'] ?? null,
+                    $permitirSalidaSinStock
                 );
-                if ($pendienteLotes > 0) {
+                if ($pendienteLotes > 0 && ! $permitirSalidaSinStock) {
                     throw new InvalidArgumentException("No hay lotes vigentes suficientes para {$producto->codigo} - {$producto->nombre}.");
                 }
-                $this->inventory->registrarMovimiento($producto, 'salida', $cantidad, 'venta', $venta->id, $usuarioId, 'Salida por venta');
+                $this->inventory->registrarMovimiento(
+                    $producto,
+                    'salida',
+                    $cantidad,
+                    'venta',
+                    $venta->id,
+                    $usuarioId,
+                    $permitirSalidaSinStock ? 'Salida por nota de entrega sin stock: ' . $motivoSalidaSinStock : 'Salida por venta',
+                    null,
+                    $permitirSalidaSinStock
+                );
             }
 
             return $venta->load('detalles', 'cliente', 'usuario', 'cuotas');

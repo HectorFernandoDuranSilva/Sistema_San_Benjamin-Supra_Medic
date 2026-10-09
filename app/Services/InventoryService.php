@@ -30,13 +30,14 @@ class InventoryService
         ?int $referenciaId,
         ?int $usuarioId,
         ?string $observacion = null,
-        ?float $costoEntrada = null
+        ?float $costoEntrada = null,
+        bool $permitirStockNegativo = false
     ): MovimientoInventario {
         if (!is_finite($cantidad) || $cantidad <= 0 || ($costoEntrada !== null && (!is_finite($costoEntrada) || $costoEntrada <= 0))) {
             throw new InvalidArgumentException('La cantidad debe ser mayor a cero.');
         }
 
-        return DB::transaction(function () use ($producto, $tipo, $cantidad, $referenciaTipo, $referenciaId, $usuarioId, $observacion, $costoEntrada) {
+        return DB::transaction(function () use ($producto, $tipo, $cantidad, $referenciaTipo, $referenciaId, $usuarioId, $observacion, $costoEntrada, $permitirStockNegativo) {
             $producto = Producto::whereKey($producto->id)->lockForUpdate()->firstOrFail();
             $stockAnterior = $this->stockActual($producto);
             $stockNuevo = match ($tipo) {
@@ -46,7 +47,7 @@ class InventoryService
                 default => throw new InvalidArgumentException('Tipo de movimiento no soportado.'),
             };
 
-            if ($stockNuevo < 0) {
+            if ($stockNuevo < 0 && ! $permitirStockNegativo) {
                 throw new InvalidArgumentException("Stock insuficiente para {$producto->codigo} - {$producto->nombre}.");
             }
 
@@ -63,6 +64,10 @@ class InventoryService
             }
             $valorNuevo = $valorAnterior !== null && $costo !== null
                 ? round($valorAnterior + ($entrada ? 1 : -1) * $cantidad * $costo, 6) : null;
+            // An incoming purchase that covers a delivery without stock restores valuation for the remaining units.
+            if ($entrada && $stockAnterior < 0 && $stockNuevo > 0 && $costoEntrada !== null) {
+                $valorNuevo = round($stockNuevo * $costoEntrada, 6);
+            }
             if ($stockNuevo == 0) {
                 $valorNuevo = 0.0;
             }
@@ -143,7 +148,8 @@ class InventoryService
         DetalleVenta $detalleVenta,
         float $cantidad,
         ?int $lotePreferidoId = null,
-        ?string $fechaVencimientoManual = null
+        ?string $fechaVencimientoManual = null,
+        bool $permitirFaltante = false
     ): float
     {
         if ($cantidad <= 0) {
@@ -192,7 +198,7 @@ class InventoryService
             $pendiente = $this->consumirLote($lote, $detalleVenta, $pendiente);
         }
 
-        if ($pendiente > 0 && $this->productoTieneLotesActivos($producto)) {
+        if ($pendiente > 0 && $this->productoTieneLotesActivos($producto) && ! $permitirFaltante) {
             throw new InvalidArgumentException("No hay lotes vigentes suficientes para {$producto->codigo} - {$producto->nombre}.");
         }
 

@@ -106,6 +106,19 @@
     <div class="field"><label>Otros costos</label><input id="otros-costos-producto" type="number" step="0.01" min="0" value="0"></div>
 </div>
 
+<section id="entrega-sin-stock" class="card" style="margin:0 0 16px;" hidden>
+    <strong>Entrega sin stock</strong>
+    <p id="entrega-sin-stock-resumen" class="muted" style="margin:6px 0 10px;"></p>
+    <label style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+        <input id="permitir-salida-sin-stock" type="checkbox" name="permitir_salida_sin_stock" value="1" @checked(old('permitir_salida_sin_stock'))>
+        Registrar esta nota aunque el inventario quede negativo
+    </label>
+    <div id="motivo-salida-sin-stock-field" class="field" hidden>
+        <label for="motivo-salida-sin-stock">Motivo de la entrega sin stock</label>
+        <textarea id="motivo-salida-sin-stock" name="motivo_salida_sin_stock" rows="2" maxlength="1000">{{ old('motivo_salida_sin_stock') }}</textarea>
+    </div>
+</section>
+
 <div class="actions" style="margin-bottom:12px;">
     <button type="button" class="btn secondary" onclick="addSelectedItem()">Agregar producto</button>
     <button class="btn" id="registrar-documento">{{ $esNota ? 'Registrar nota de entrega' : 'Registrar venta' }}</button>
@@ -152,6 +165,7 @@ document.getElementById('tipo-documento').addEventListener('change', function ()
     document.getElementById('titulo-documento').textContent = esNota ? 'Nueva nota de entrega' : 'Registro de ventas';
     document.getElementById('etiqueta-documento').textContent = esNota ? 'Referencia de nota' : 'Factura';
     document.getElementById('registrar-documento').textContent = esNota ? 'Registrar nota de entrega' : 'Registrar venta';
+    updateDeliveryWithoutStock();
 });
 const products = @json($productosVenta);
 const savedInstallments = @json(old('cuotas', []));
@@ -334,7 +348,40 @@ function updateTotals() {
     document.getElementById('total-final').textContent = money(total);
     document.getElementById('total-envio').textContent = money(envio);
     document.getElementById('total-otros').textContent = money(otros);
+    updateDeliveryWithoutStock();
     updateInstallmentSummary();
+}
+
+function updateDeliveryWithoutStock() {
+    const documentType = document.getElementById('tipo-documento').value;
+    const section = document.getElementById('entrega-sin-stock');
+    const checkbox = document.getElementById('permitir-salida-sin-stock');
+    const reasonField = document.getElementById('motivo-salida-sin-stock-field');
+    const reason = document.getElementById('motivo-salida-sin-stock');
+    const quantities = new Map();
+
+    document.querySelectorAll('#items tbody tr').forEach(row => {
+        const productId = Number(row.querySelector('input[name$="[producto_id]"]').value);
+        const quantity = Number(row.querySelector('.item-cantidad').value || 0);
+        quantities.set(productId, (quantities.get(productId) || 0) + quantity);
+    });
+
+    const shortages = Array.from(quantities.entries()).map(([productId, quantity]) => {
+        const product = products.find(item => Number(item.id) === productId);
+        const available = Number(product?.stock_disponible ?? product?.stock ?? 0);
+        return { product, shortage: quantity - available };
+    }).filter(item => item.shortage > 0.0001);
+
+    const needsException = documentType === 'nota_entrega' && shortages.length > 0;
+    section.hidden = !needsException;
+    checkbox.disabled = !needsException;
+    if (!needsException) checkbox.checked = false;
+    reason.disabled = !needsException || !checkbox.checked;
+    reason.required = needsException && checkbox.checked;
+    reasonField.hidden = !checkbox.checked;
+    document.getElementById('entrega-sin-stock-resumen').textContent = shortages
+        .map(item => `${item.product?.codigo || 'Producto'}: faltan ${money(item.shortage)}`)
+        .join(' · ');
 }
 
 function installmentDate(start, monthOffset) {
@@ -413,6 +460,7 @@ document.getElementById('descuento-porcentaje').addEventListener('input', functi
 });
 document.getElementById('plan-pago-tipo').addEventListener('change', toggleInstallments);
 document.getElementById('generar-cuotas').addEventListener('click', generateInstallments);
+document.getElementById('permitir-salida-sin-stock').addEventListener('change', updateDeliveryWithoutStock);
 document.getElementById('cliente-id').addEventListener('change', function () {
     document.getElementById('nit-cliente').value = this.selectedOptions[0]?.dataset.documento || '';
 });
@@ -431,6 +479,7 @@ document.getElementById('documento-form').addEventListener('submit', function (e
 
 refreshSelectedProduct();
 toggleInstallments();
+updateDeliveryWithoutStock();
 </script>
 @endsection
 

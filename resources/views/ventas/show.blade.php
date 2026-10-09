@@ -17,6 +17,13 @@
 </div>
 
 <div class="card">
+    @if($venta->tipo_documento === 'nota_entrega' && $venta->permitir_salida_sin_stock)
+        @php($faltantes = $venta->detalles->filter(fn ($detalle) => (float) ($detalle->producto?->stock_actual ?? 0) < 0))
+        <div class="alert-item" style="margin-bottom:14px;">
+            <strong><span>{{ $faltantes->isNotEmpty() ? 'Pendiente de regularización de inventario' : 'Entrega sin stock regularizada' }}</span><span>{{ $faltantes->isNotEmpty() ? 'Pendiente' : 'Regularizada' }}</span></strong>
+            <small>Motivo: {{ $venta->motivo_salida_sin_stock }}@if($faltantes->isNotEmpty()) · Faltante actual: {{ $faltantes->map(fn ($detalle) => $detalle->producto?->codigo . ' ' . number_format(abs((float) $detalle->producto?->stock_actual), 2))->join(', ') }}@endif</small>
+        </div>
+    @endif
     <p>
         <strong>Orden:</strong> {{ $venta->nombre_comercial ?? 'Sin nombre comercial' }} |
         <strong>Documento:</strong> {{ $venta->tipo_documento === 'nota_entrega' ? 'Nota de entrega' : 'Factura' }} |

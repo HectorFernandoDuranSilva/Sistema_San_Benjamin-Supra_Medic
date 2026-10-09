@@ -68,7 +68,7 @@ class SaleController extends Controller
         return view('ventas.index', compact('ventas', 'filters', 'notasCoincidentes'));
     }
 
-    public function create(Request $request, SaleService $sales)
+    public function create(Request $request, SaleService $sales, \App\Services\InventoryService $inventory)
     {
         $rate = (float) (TipoCambio::where('estado', 'vigente')->latest('fecha')->latest('id')->value('valor') ?: TipoCambio::ultimoValor());
         $productos = Producto::with(['lotes' => fn ($query) => $query
@@ -93,6 +93,7 @@ class SaleController extends Controller
                 'procedencia' => $p->procedencia,
                 'medida' => $p->medida,
                 'stock' => $p->stock_actual,
+                'stock_disponible' => $inventory->stockDisponibleParaVenta($p),
                 'price' => $p->precio_venta,
                 'cost' => $p->costo_referencial,
                 'suggested' => app(\App\Services\ProductPricingService::class)->suggestedReplacementPrice($p, $rate),
@@ -119,6 +120,17 @@ class SaleController extends Controller
                 $data['tipo_documento'] = 'nota_entrega';
             }
             $venta = $service->registrar($data, $request->user()->id);
+            if ($venta->permitir_salida_sin_stock) {
+                app(AuditLogService::class)->record(
+                    $request,
+                    'registrar_entrega_sin_stock',
+                    'notas_entrega',
+                    $venta,
+                    null,
+                    $venta->only(['numero_venta', 'motivo_salida_sin_stock']),
+                    'Nota de entrega registrada con faltante de inventario.'
+                );
+            }
         } catch (InvalidArgumentException $e) {
             return back()->withErrors(['venta' => $e->getMessage()])->withInput();
         }

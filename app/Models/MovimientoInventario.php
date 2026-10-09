@@ -46,4 +46,9 @@ class MovimientoInventario extends Model
     {
         return $this->belongsTo(User::class, 'usuario_id');
     }
+
+    public function venta()
+    {
+        return $this->belongsTo(Venta::class, 'referencia_id');
+    }
 }

@@ -30,6 +30,8 @@ class DashboardController extends Controller
         $productosSinPrecio = $productos->filter(fn ($producto) => (float) $producto->precio_venta <= 0);
         $productosSinCategoria = $productos->filter(fn ($producto) => $producto->categoria_id === null);
         $productosStockNegativo = $productos->filter(fn ($producto) => $producto->stock_actual < 0);
+        $entregasSinStockPendientes = $this->entregasSinStockPendientes($productosStockNegativo);
+        $otrosProductosStockNegativo = $productosStockNegativo->reject(fn ($producto) => $entregasSinStockPendientes->contains('producto_id', $producto->id));
         $productosSinMarcaProcedencia = $productos->filter(fn ($producto) => trim((string) $producto->marca) === '' || trim((string) $producto->procedencia) === '');
         $lotesSinVencimiento = InventarioLote::with('producto')
             ->where('estado', 'activo')
@@ -48,7 +50,7 @@ class DashboardController extends Controller
             'ventasHoy' => (clone $ventasHoy)->count(),
             'totalHoy' => (clone $ventasHoy)->sum('total'),
             'productosBajoStock' => $productosBajoStock,
-            'alertasDatos' => $this->alertasDatos($productosSinPrecio, $productosSinCategoria, $productosStockNegativo, $productosSinMarcaProcedencia, $lotesSinVencimiento),
+            'alertasDatos' => $this->alertasDatos($productosSinPrecio, $productosSinCategoria, $otrosProductosStockNegativo, $entregasSinStockPendientes, $productosSinMarcaProcedencia, $lotesSinVencimiento),
             'ultimosMovimientos' => MovimientoInventario::with('producto', 'usuario')->latest('fecha_movimiento')->take(4)->get(),
             'ultimasOperaciones' => $ultimasOperaciones,
             'movimientoMensual' => $movimientoMensual,
@@ -235,7 +237,28 @@ class DashboardController extends Controller
             ->values();
     }
 
-    private function alertasDatos(Collection $productosSinPrecio, Collection $productosSinCategoria, Collection $productosStockNegativo, Collection $productosSinMarcaProcedencia, Collection $lotesSinVencimiento): Collection
+    private function entregasSinStockPendientes(Collection $productosStockNegativo): Collection
+    {
+        if ($productosStockNegativo->isEmpty()) {
+            return collect();
+        }
+
+        return MovimientoInventario::with(['producto', 'venta'])
+            ->where('referencia_tipo', 'venta')
+            ->whereIn('producto_id', $productosStockNegativo->pluck('id'))
+            ->whereHas('venta', fn ($query) => $query
+                ->where('tipo_documento', 'nota_entrega')
+                ->where('permitir_salida_sin_stock', true)
+                ->where('estado', 'registrada'))
+            ->latest('fecha_movimiento')
+            ->latest('id')
+            ->get()
+            ->filter(fn (MovimientoInventario $movimiento) => $movimiento->producto && $movimiento->producto->stock_actual < 0)
+            ->unique('producto_id')
+            ->values();
+    }
+
+    private function alertasDatos(Collection $productosSinPrecio, Collection $productosSinCategoria, Collection $productosStockNegativo, Collection $entregasSinStockPendientes, Collection $productosSinMarcaProcedencia, Collection $lotesSinVencimiento): Collection
     {
         return collect([
             [
@@ -257,6 +280,13 @@ class DashboardController extends Controller
                 'total' => $productosStockNegativo->count(),
                 'detalle' => $productosStockNegativo->take(2)->pluck('nombre')->join(', ') ?: 'Sin pendientes',
                 'ruta' => route('inventario.index'),
+                'permiso' => 'inventario',
+            ],
+            [
+                'titulo' => 'Entregas sin stock pendientes',
+                'total' => $entregasSinStockPendientes->count(),
+                'detalle' => $entregasSinStockPendientes->take(2)->map(fn ($movimiento) => $movimiento->producto?->nombre . ' (' . number_format(abs((float) $movimiento->producto?->stock_actual), 2) . ' faltante)')->join(', ') ?: 'Sin pendientes',
+                'ruta' => route('inventario.index', ['stock_hasta' => 0]),
                 'permiso' => 'inventario',
             ],
             [
