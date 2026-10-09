@@ -1785,7 +1785,7 @@ class ExampleTest extends TestCase
         $this->assertSame('0.00', $nearest->cantidad_disponible);
         $this->assertSame('1.00', $later->cantidad_disponible);
 
-        $this->get(route('ventas.index'))->assertOk()->assertDontSee('V-DOC-LOT');
+        $this->get(route('ventas.index'))->assertOk()->assertSee('V-DOC-LOT')->assertSee('Nota de entrega');
         $this->get(route('reportes.ventas'))->assertOk()->assertDontSee('V-DOC-LOT');
         $this->get(route('reportes.documentos'))->assertOk()
             ->assertViewHas('notas', fn ($notas) => $notas->contains('id', $sale->id))

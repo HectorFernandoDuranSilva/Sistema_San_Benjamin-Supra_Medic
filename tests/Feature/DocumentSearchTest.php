@@ -71,7 +71,7 @@ class DocumentSearchTest extends TestCase
             ->assertSee('INSTITUTO MARIANO - MONTEAGUDO');
     }
 
-    public function test_sales_search_points_to_a_matching_delivery_note_without_mixing_it_with_invoices(): void
+    public function test_sales_search_lists_delivery_notes_without_mixing_them_with_invoice_rules(): void
     {
         $user = $this->signIn();
         $cliente = Cliente::create(['nombre' => 'Laboratorio Copacabana', 'documento' => '1109235014', 'activo' => true]);
@@ -83,9 +83,14 @@ class DocumentSearchTest extends TestCase
 
         $this->get(route('ventas.index', ['buscar' => 'EXCEL-V-982', 'anio' => 2026]))
             ->assertOk()
-            ->assertSee('El resultado está registrado como nota de entrega')
             ->assertSee('EXCEL-V-982')
-            ->assertSee('Laboratorio Copacabana');
+            ->assertSee('Laboratorio Copacabana')
+            ->assertSee('Nota de entrega')
+            ->assertSee('No aplica');
+
+        $this->get(route('ventas.index', ['tipo_documento' => 'factura']))
+            ->assertOk()
+            ->assertDontSee('EXCEL-V-982');
     }
 
     public function test_purchases_searches_notes_and_invoices_by_number_supplier_nit_year_and_company(): void

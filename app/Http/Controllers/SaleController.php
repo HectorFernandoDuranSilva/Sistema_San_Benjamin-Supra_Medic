@@ -22,6 +22,7 @@ class SaleController extends Controller
     {
         $filters = $request->validate([
             'buscar' => ['nullable', 'string', 'max:255'],
+            'tipo_documento' => ['nullable', 'in:factura,nota_entrega'],
             'nombre_comercial' => ['nullable', 'in:San Benjamin,Supra Medic'],
             'anio' => ['nullable', 'integer', 'min:2000', 'max:2100'],
         ]);
@@ -29,7 +30,6 @@ class SaleController extends Controller
         $ventas = Venta::with('cliente', 'usuario')
             ->withSum(['cobros as cobrado' => fn ($query) => $query->where('estado', 'registrado')], 'importe')
             ->withMax(['cobros as fecha_ultimo_cobro' => fn ($query) => $query->where('estado', 'registrado')], 'fecha')
-            ->where(fn ($query) => $query->whereNull('tipo_documento')->orWhere('tipo_documento', '!=', 'nota_entrega'))
             ->when($filters['buscar'] ?? null, function ($query, $buscar) {
                 $buscar = '%' . trim($buscar) . '%';
                 $query->where(function ($query) use ($buscar) {
@@ -39,6 +39,9 @@ class SaleController extends Controller
                         ->orWhereHas('cliente', fn ($cliente) => $cliente->coincideConBusqueda($buscar));
                 });
             })
+            ->when(($filters['tipo_documento'] ?? null) === 'factura', fn ($query) => $query
+                ->where(fn ($documento) => $documento->whereNull('tipo_documento')->orWhere('tipo_documento', '!=', 'nota_entrega')))
+            ->when(($filters['tipo_documento'] ?? null) === 'nota_entrega', fn ($query) => $query->where('tipo_documento', 'nota_entrega'))
             ->when($filters['nombre_comercial'] ?? null, fn ($query, $nombre) => $query->where('nombre_comercial', $nombre))
             ->when($filters['anio'] ?? null, fn ($query, $anio) => $query->whereYear('fecha', $anio))
             ->latest('fecha')
@@ -47,25 +50,7 @@ class SaleController extends Controller
             ->paginate(20)
             ->withQueryString();
 
-        $notasCoincidentes = collect();
-        if (! empty($filters['buscar'])) {
-            $buscar = '%' . trim($filters['buscar']) . '%';
-            $notasCoincidentes = Venta::with('cliente')
-                ->where('tipo_documento', 'nota_entrega')
-                ->where(function ($query) use ($buscar) {
-                    $query->where('numero_venta', 'like', $buscar)
-                        ->orWhere('factura', 'like', $buscar)
-                        ->orWhere('nit_cliente', 'like', $buscar)
-                        ->orWhereHas('cliente', fn ($cliente) => $cliente->coincideConBusqueda($buscar));
-                })
-                ->when($filters['nombre_comercial'] ?? null, fn ($query, $nombre) => $query->where('nombre_comercial', $nombre))
-                ->when($filters['anio'] ?? null, fn ($query, $anio) => $query->whereYear('fecha', $anio))
-                ->orderByDesc('fecha')
-                ->limit(5)
-                ->get();
-        }
-
-        return view('ventas.index', compact('ventas', 'filters', 'notasCoincidentes'));
+        return view('ventas.index', compact('ventas', 'filters'));
     }
 
     public function create(Request $request, SaleService $sales, \App\Services\InventoryService $inventory)
