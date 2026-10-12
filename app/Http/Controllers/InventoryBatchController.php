@@ -16,8 +16,8 @@ class InventoryBatchController extends Controller
 
         $lotes = InventarioLote::with('producto', 'compra', 'usuario')
             ->withSum('consumos as cantidad_consumida', 'cantidad')
+            ->when($request->input('estado', 'activo') !== 'todos', fn ($query) => $query->where('estado', $request->input('estado', 'activo')))
             ->when($request->filled('producto_id'), fn ($query) => $query->where('producto_id', $request->producto_id))
-            ->when($request->filled('estado'), fn ($query) => $query->where('estado', $request->estado))
             ->when($request->filled('vencimiento'), function ($query) use ($request, $diasAlertaVencimiento) {
                 return match ($request->vencimiento) {
                     'por_vencer' => $query
@@ -100,21 +100,29 @@ class InventoryBatchController extends Controller
         }
 
         $before = $lote->only(['codigo_lote', 'fecha_vencimiento', 'cantidad_disponible', 'estado', 'observacion']);
-        $lote->update([
-            'estado' => 'inactivo',
-            'cantidad_disponible' => 0,
-            'observacion' => trim(($lote->observacion ? $lote->observacion . "\n" : '') . 'Lote eliminado manualmente.'),
-        ]);
+        $tieneConsumos = $lote->consumos()->exists();
+        if ($tieneConsumos) {
+            // Preserve consumed-lot history while removing it from active availability.
+            $lote->update([
+                'estado' => 'inactivo',
+                'cantidad_disponible' => 0,
+                'observacion' => trim(($lote->observacion ? $lote->observacion . "\n" : '') . 'Lote eliminado manualmente; se conserva por historial.'),
+            ]);
+        } else {
+            $lote->delete();
+        }
         app(AuditLogService::class)->record(
             $request,
             'elimino',
             'lotes',
             $lote,
             $before,
-            $lote->only(array_keys($before)),
-            'Lote retirado de disponibilidad'
+            $tieneConsumos ? $lote->only(array_keys($before)) : null,
+            $tieneConsumos ? 'Lote retirado de disponibilidad; se conserva por historial.' : 'Lote eliminado definitivamente.'
         );
 
-        return back()->with('ok', 'Lote eliminado de la disponibilidad de vencimientos.');
+        return back()->with('ok', $tieneConsumos
+            ? 'Lote retirado de disponibilidad y conservado por historial.'
+            : 'Lote eliminado definitivamente.');
     }
 }

@@ -334,6 +334,7 @@ class ProductController extends Controller
     {
         return $producto->lotes()
             ->withSum('consumos as cantidad_consumida', 'cantidad')
+            ->where('estado', 'activo')
             ->orderByRaw('CASE WHEN fecha_vencimiento IS NULL THEN 1 ELSE 0 END')
             ->orderBy('fecha_vencimiento')
             ->latest('id')

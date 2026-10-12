@@ -38,9 +38,9 @@
         <div class="field">
             <label>Estado</label>
             <select name="estado">
-                <option value="">Todos</option>
-                <option value="activo" @selected(request('estado') === 'activo')>Activo</option>
-                <option value="inactivo" @selected(request('estado') === 'inactivo')>Inactivo</option>
+                <option value="activo" @selected(request('estado', 'activo') === 'activo')>Activos</option>
+                <option value="inactivo" @selected(request('estado') === 'inactivo')>Inactivos</option>
+                <option value="todos" @selected(request('estado') === 'todos')>Todos</option>
             </select>
         </div>
         <div class="field">
@@ -71,7 +71,7 @@
                 <th>Disponible</th>
                 <th>Estado</th>
                 <th>Observación</th>
-                <th>Authenticator</th>
+                <th>Authenticator (guardar/eliminar)</th>
                 <th>Acciones</th>
             </tr>
         </thead>
@@ -121,16 +121,16 @@
                         </select>
                     </td>
                     <td><input form="lote-edit-{{ $lote->id }}" name="observacion" value="{{ $lote->observacion }}"></td>
-                    <td><input form="lote-edit-{{ $lote->id }}" name="totp_code" inputmode="numeric" maxlength="32" placeholder="Código" required></td>
+                    <td><input id="lote-totp-{{ $lote->id }}" form="lote-edit-{{ $lote->id }}" name="totp_code" inputmode="numeric" autocomplete="one-time-code" maxlength="32" placeholder="Código Authenticator" required></td>
                     <td>
                         <div class="lote-actions">
                             <button form="lote-edit-{{ $lote->id }}" class="btn secondary">Guardar</button>
                             <details class="force-delete">
                                 <summary>Eliminar</summary>
-                                <form method="post" action="{{ route('inventario.lotes.destroy', $lote) }}" data-glass-confirm="Esta acción quitara el lote de la disponibilidad de vencimientos. No borra movimientos históricos. ¿Desea continuar?">
+                                <form class="lote-delete-form" method="post" action="{{ route('inventario.lotes.destroy', $lote) }}" data-code-source="lote-totp-{{ $lote->id }}" data-glass-confirm="Esta acción eliminará el lote. Si tiene movimientos históricos se conservará solo para mantener la trazabilidad. ¿Desea continuar?">
                                     @csrf
                                     @method('delete')
-                                    <input name="totp_code" inputmode="numeric" maxlength="32" placeholder="Código Authenticator" required>
+                                    <input type="hidden" name="totp_code">
                                     <button class="btn force-danger">Eliminar lote</button>
                                 </form>
                             </details>
@@ -145,4 +145,13 @@
     </div>
     <div class="pagination">{{ $lotes->links() }}</div>
 </div>
+<script>
+document.querySelectorAll('.lote-delete-form').forEach(function (form) {
+    form.addEventListener('submit', function () {
+        const source = document.getElementById(form.dataset.codeSource);
+        const target = form.querySelector('[name="totp_code"]');
+        if (source && target) target.value = source.value;
+    });
+});
+</script>
 @endsection

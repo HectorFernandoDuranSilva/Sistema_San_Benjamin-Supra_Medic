@@ -29,17 +29,17 @@
                         @csrf
                         @method('delete')
                         <input type="hidden" name="return_route" value="productos.index">
-                        <input name="totp_code" inputmode="numeric" maxlength="32" placeholder="Código Authenticator" required>
+                        <input id="producto-totp-{{ $producto->id }}" name="totp_code" inputmode="numeric" autocomplete="one-time-code" maxlength="32" placeholder="Código Authenticator" required>
                         <button class="btn danger" type="submit">Eliminar</button>
                     </form>
                 </div>
                 <details class="force-delete">
                     <summary>Eliminar definitivo</summary>
-                    <form method="post" action="{{ route('productos.force-destroy', $producto) }}" data-glass-confirm="Esta acción borrara definitivamente el producto y sus referencias directas en inventario, compras y ventas. ¿Desea continuar?">
+                    <form class="product-force-delete-form" method="post" action="{{ route('productos.force-destroy', $producto) }}" data-code-source="producto-totp-{{ $producto->id }}" data-glass-confirm="Esta acción borrara definitivamente el producto y sus referencias directas en inventario, compras y ventas. ¿Desea continuar?">
                         @csrf
                         @method('delete')
                         <input type="hidden" name="return_route" value="productos.index">
-                        <input name="totp_code" inputmode="numeric" maxlength="32" placeholder="Código Authenticator" required>
+                        <input type="hidden" name="totp_code">
                         <button class="btn force-danger" type="submit">Forzar eliminacion</button>
                     </form>
                 </details>
@@ -49,4 +49,13 @@
 </table>
 <div class="pagination">{{ $productos->links() }}</div>
 </div>
+<script>
+document.querySelectorAll('.product-force-delete-form').forEach(function (form) {
+    form.addEventListener('submit', function () {
+        const source = document.getElementById(form.dataset.codeSource);
+        const target = form.querySelector('[name="totp_code"]');
+        if (source && target) target.value = source.value;
+    });
+});
+</script>
 @endsection
