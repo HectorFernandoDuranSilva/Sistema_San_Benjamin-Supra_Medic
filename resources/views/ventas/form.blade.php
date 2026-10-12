@@ -109,9 +109,11 @@
 </div>
 
 <section id="entrega-sin-stock" class="card" style="margin:0 0 16px;" @if(!$facturaStockPendiente)hidden @endif>
-    <strong>{{ $facturaStockPendiente ? 'Factura con stock pendiente' : 'Entrega sin stock' }}</strong>
+    <strong>{{ $facturaStockPendiente ? 'Factura con stock pendiente' : 'Nota de entrega sin stock' }}</strong>
     @if($facturaStockPendiente)
         <p class="muted" style="margin:6px 0 10px;">Se registrará la factura aunque falte existencia. Cuando se reponga el producto, el inventario podrá regularizarse sin cambiar el documento.</p>
+    @else
+        <p class="muted" style="margin:6px 0 10px;">La nota se puede registrar aunque no exista stock. El inventario quedará pendiente y podrá regularizarse cuando ingrese el producto.</p>
     @endif
     <p id="entrega-sin-stock-resumen" class="muted" style="margin:6px 0 10px;"></p>
     <label style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
@@ -379,12 +381,14 @@ function updateDeliveryWithoutStock() {
 
     const facturaStockPendiente = @json($facturaStockPendiente);
     const needsException = facturaStockPendiente || (documentType === 'nota_entrega' && shortages.length > 0);
+    const notaSinStock = documentType === 'nota_entrega' && shortages.length > 0;
     section.hidden = !needsException;
     checkbox.disabled = !needsException;
     if (!needsException) checkbox.checked = false;
     if (facturaStockPendiente) checkbox.checked = true;
-    reason.disabled = !needsException || !checkbox.checked;
-    reason.required = needsException && checkbox.checked;
+    if (notaSinStock) checkbox.checked = true;
+    reason.disabled = !needsException || (!checkbox.checked && !notaSinStock);
+    reason.required = needsException && checkbox.checked && !notaSinStock;
     reasonField.hidden = !checkbox.checked;
     document.getElementById('entrega-sin-stock-resumen').textContent = shortages
         .map(item => `${item.product?.codigo || 'Producto'}: faltan ${money(item.shortage)}`)

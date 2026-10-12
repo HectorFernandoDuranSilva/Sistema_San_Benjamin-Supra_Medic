@@ -28,14 +28,19 @@ class SaleService
             $esFacturaStockPendiente = ! $esNotaEntrega
                 && ($data['tipo_documento'] ?? 'factura') === 'factura'
                 && (bool) ($data['factura_stock_pendiente'] ?? false);
-            $permitirSalidaSinStock = ($esNotaEntrega || $esFacturaStockPendiente)
-                && (bool) ($data['permitir_salida_sin_stock'] ?? false);
+            // Las notas de entrega pueden documentar una salida pendiente aunque
+            // no exista stock disponible. Las facturas requieren confirmación explícita.
+            $permitirSalidaSinStock = $esNotaEntrega
+                || ($esFacturaStockPendiente && (bool) ($data['permitir_salida_sin_stock'] ?? false));
             $motivoSalidaSinStock = trim((string) ($data['motivo_salida_sin_stock'] ?? ''));
             if ($esFacturaStockPendiente && ! $permitirSalidaSinStock) {
                 throw new InvalidArgumentException('Confirme que la factura se registrará con stock pendiente.');
             }
-            if ($permitirSalidaSinStock && $motivoSalidaSinStock === '') {
+            if ($permitirSalidaSinStock && $motivoSalidaSinStock === '' && ! $esNotaEntrega) {
                 throw new InvalidArgumentException('Indique el motivo del stock pendiente.');
+            }
+            if ($esNotaEntrega && $motivoSalidaSinStock === '') {
+                $motivoSalidaSinStock = 'Nota de entrega registrada sin existencia disponible.';
             }
             if (($data['plan_pago'] ?? 'contado') === 'cuotas' && ! Schema::hasTable('venta_cuotas')) {
                 throw new InvalidArgumentException('La actualización de la base de datos está pendiente. No se puede registrar una venta en cuotas todavía.');
