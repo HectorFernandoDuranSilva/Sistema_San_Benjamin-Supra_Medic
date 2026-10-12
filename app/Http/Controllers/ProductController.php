@@ -268,6 +268,9 @@ class ProductController extends Controller
             $producto->movimientos()->delete();
             $producto->detalleVentas()->delete();
             $producto->detalleCompras()->delete();
+            // Remove batches after their sale/purchase references so the
+            // product cannot remain visible in the lots and expiry screen.
+            $producto->lotes()->delete();
             $producto->delete();
             app(AuditLogService::class)->record(
                 $request,
