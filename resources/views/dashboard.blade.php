@@ -43,16 +43,52 @@
 
         <div class="dashboard-grid">
             @if($dashboardOpciones['movimiento_mensual'])
-            <section class="panel focus-card">
-                <div>
-                    <h2>Movimiento mensual</h2>
-                    <div class="kpi-strip">
-                        <div class="mini"><span>Ventas</span><strong>Bs {{ number_format($movimientoMensual['ventas'], 2) }}</strong></div>
-                        <div class="mini"><span>Compras</span><strong>Bs {{ number_format($movimientoMensual['compras'], 2) }}</strong></div>
-                        <div class="mini"><span>Resultado</span><strong>Bs {{ number_format($movimientoMensual['resultado'], 2) }}</strong></div>
+            @php
+                $movimientoBase = $movimientoMensual['ventas'] + $movimientoMensual['compras'];
+                $ventasProporcion = $movimientoBase > 0 ? round(($movimientoMensual['ventas'] / $movimientoBase) * 100, 1) : 0;
+                $comprasProporcion = $movimientoBase > 0 ? round(($movimientoMensual['compras'] / $movimientoBase) * 100, 1) : 0;
+                $resultadoEsPositivo = $movimientoMensual['resultado'] >= 0;
+            @endphp
+            <section class="panel monthly-summary">
+                <div class="monthly-summary-head">
+                    <div>
+                        <span class="eyebrow">Resumen financiero del mes</span>
+                        <h2>Movimiento mensual</h2>
+                        <p class="muted">Comparación entre ventas y compras registradas en el período actual.</p>
+                    </div>
+                    <span class="monthly-status {{ $resultadoEsPositivo ? 'is-positive' : 'is-negative' }}">
+                        <strong>{{ $resultadoEsPositivo ? 'Ganancia' : 'Pérdida' }}</strong>
+                        <small>{{ $resultadoEsPositivo ? 'Las ventas superan a las compras' : 'Las compras superan a las ventas' }}</small>
+                    </span>
+                </div>
+                <div class="monthly-kpis">
+                    <div class="monthly-kpi sales">
+                        <span>Ventas</span>
+                        <strong>Bs {{ number_format($movimientoMensual['ventas'], 2) }}</strong>
+                        <small>{{ number_format($ventasProporcion, 1) }}% del movimiento</small>
+                    </div>
+                    <div class="monthly-kpi purchases">
+                        <span>Compras</span>
+                        <strong>Bs {{ number_format($movimientoMensual['compras'], 2) }}</strong>
+                        <small>{{ number_format($comprasProporcion, 1) }}% del movimiento</small>
+                    </div>
+                    <div class="monthly-kpi result {{ $resultadoEsPositivo ? 'is-positive' : 'is-negative' }}">
+                        <span>Resultado comercial</span>
+                        <strong>{{ $resultadoEsPositivo ? '+' : '-' }}Bs {{ number_format(abs($movimientoMensual['resultado']), 2) }}</strong>
+                        <small>Ventas - compras</small>
                     </div>
                 </div>
-                <div class="ring" style="background:conic-gradient(var(--primary) 0 {{ $movimientoMensual['porcentaje'] }}%, var(--soft) {{ $movimientoMensual['porcentaje'] }}% 100%);"><span>{{ $movimientoMensual['porcentaje'] }}%</span></div>
+                <div class="monthly-comparison" aria-label="Comparación entre ventas y compras">
+                    <div class="monthly-comparison-labels"><span>Ventas</span><span>Compras</span></div>
+                    <div class="monthly-bar">
+                        <span class="monthly-bar-sales" style="width: {{ $ventasProporcion }}%"></span>
+                        <span class="monthly-bar-purchases" style="width: {{ $comprasProporcion }}%"></span>
+                    </div>
+                    <p class="monthly-explanation">
+                        {{ $resultadoEsPositivo ? 'Las ventas superan a las compras' : 'Las compras superan a las ventas' }}
+                        por <strong>Bs {{ number_format(abs($movimientoMensual['resultado']), 2) }}</strong>.
+                    </p>
+                </div>
             </section>
             @endif
             @if($dashboardOpciones['movimientos'])<section class="panel">
