@@ -59,6 +59,7 @@ Route::middleware('auth')->group(function () {
     Route::resource('productos', ProductController::class)->except(['show'])->middleware('permission:productos');
     Route::post('/productos/{producto}/aprobar-precio', [ProductController::class, 'approvePrice'])->middleware('permission:productos')->name('productos.precio.aprobar');
     Route::post('/productos/{producto}/lotes', [ProductController::class, 'storeBatch'])->middleware('permission:productos')->name('productos.lotes.store');
+    Route::post('/productos/{producto}/regularizar-faltante', [ProductController::class, 'regularizeShortage'])->middleware('permission:productos')->name('productos.regularizar-faltante');
     Route::get('/productos/{producto}', [ProductController::class, 'show'])->middleware('permission:productos')->name('productos.show');
     Route::resource('categorias', CategoryController::class)->only(['index', 'store', 'update', 'destroy'])->middleware('permission:productos');
     Route::resource('clientes', CustomerController::class)->only(['index', 'store', 'update', 'destroy'])->middleware('permission:clientes');

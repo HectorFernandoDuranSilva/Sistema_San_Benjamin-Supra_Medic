@@ -210,6 +210,54 @@ class ProductController extends Controller
         return redirect()->route('productos.show', $producto)->with('ok', 'Lote agregado al producto.');
     }
 
+    public function regularizeShortage(Request $request, Producto $producto)
+    {
+        $data = $request->validate([
+            'cantidad' => ['required', 'numeric', 'gt:0'],
+            'observacion' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        try {
+            DB::transaction(function () use ($request, $producto, $data): void {
+                $productoBloqueado = Producto::whereKey($producto->id)->lockForUpdate()->firstOrFail();
+                $stockActual = $productoBloqueado->stock_actual;
+                $cantidad = (float) $data['cantidad'];
+                $faltante = abs(min(0, $stockActual));
+
+                if ($faltante <= 0) {
+                    throw new InvalidArgumentException('Este producto no tiene un faltante pendiente de regularizar.');
+                }
+                if ($cantidad > $faltante + 0.0001) {
+                    throw new InvalidArgumentException('La regularización no puede superar el faltante actual de ' . number_format($faltante, 2) . ' unidades.');
+                }
+
+                $this->inventory->registrarMovimiento(
+                    $productoBloqueado,
+                    'ajuste_positivo',
+                    $cantidad,
+                    'regularizacion_faltante',
+                    $productoBloqueado->id,
+                    $request->user()->id,
+                    trim((string) ($data['observacion'] ?? '')) ?: 'Regularización de faltante de stock'
+                );
+
+                app(AuditLogService::class)->record(
+                    $request,
+                    'regularizo_faltante_stock',
+                    'productos',
+                    $productoBloqueado,
+                    ['stock_anterior' => $stockActual, 'faltante_anterior' => $faltante],
+                    ['cantidad_regularizada' => $cantidad, 'stock_nuevo' => $stockActual + $cantidad],
+                    'Regularización manual de faltante desde Productos'
+                );
+            });
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['cantidad' => $e->getMessage()])->withInput();
+        }
+
+        return redirect()->route('productos.show', $producto)->with('ok', 'Faltante de stock regularizado y registrado en Kardex.');
+    }
+
     public function destroy(Request $request, Producto $producto)
     {
         abort_unless($request->user()?->isAdmin(), 403);

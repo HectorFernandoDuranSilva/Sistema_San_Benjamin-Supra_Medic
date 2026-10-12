@@ -17,6 +17,26 @@
     <div class="metric"><span>Precio venta</span><strong>Bs {{ number_format($producto->precio_venta, 2) }}</strong></div>
 </div>
 
+@if((float) $producto->stock_actual < 0)
+    @php($faltanteStock = abs((float) $producto->stock_actual))
+    <section class="card" style="margin-bottom:20px;border-color:#f0a0a0;background:#fff8f8;">
+        <div class="top" style="margin-bottom:10px;">
+            <div>
+                <h2 style="margin:0;color:#991b1b;">Faltante de stock pendiente</h2>
+                <p class="muted" style="margin:5px 0 0;">Este producto tiene {{ number_format($faltanteStock, 2) }} unidades pendientes por regularizar.</p>
+            </div>
+            <strong style="color:#b91c1c;font-size:20px;">{{ number_format($producto->stock_actual, 2) }}</strong>
+        </div>
+        <p style="margin:0 0 12px;">Registra solo el ajuste necesario para compensar el faltante. Esta acción no crea una compra ni un lote artificial; quedará registrada en Kardex con el usuario y la fecha.</p>
+        <form method="post" action="{{ route('productos.regularizar-faltante', $producto) }}" class="row" data-glass-confirm="Se registrará un ajuste positivo para regularizar el faltante de este producto. ¿Desea continuar?">
+            @csrf
+            <div class="field"><label for="cantidad-regularizacion">Cantidad a regularizar</label><input id="cantidad-regularizacion" name="cantidad" type="number" min="0.01" max="{{ $faltanteStock }}" step="0.01" value="{{ old('cantidad', number_format($faltanteStock, 2, '.', '')) }}" required><small>Máximo permitido: {{ number_format($faltanteStock, 2) }}</small></div>
+            <div class="field"><label for="observacion-regularizacion">Observación</label><input id="observacion-regularizacion" name="observacion" maxlength="1000" value="{{ old('observacion') }}" placeholder="Motivo de la regularización"></div>
+            <div class="field" style="justify-content:end;"><button class="btn">Regularizar faltante</button></div>
+        </form>
+    </section>
+@endif
+
 <section style="margin-bottom:20px;">
     <h2>{{ $producto->nombre }}</h2>
     <dl>
