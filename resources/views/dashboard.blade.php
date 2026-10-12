@@ -133,6 +133,35 @@
                 </div>
             </section>@endif
 
+            @if($dashboardOpciones['stock_pendiente'])<section class="panel">
+                <div class="top">
+                    <h2>Faltantes de stock</h2>
+                    @if(auth()->user()->hasPermission('productos'))
+                        <a class="btn secondary" href="{{ route('productos.index') }}">Regularizar faltantes</a>
+                    @endif
+                </div>
+                <div class="compact-list">
+                    @forelse($productosStockNegativo->take(5) as $producto)
+                        @if(auth()->user()->hasPermission('productos'))
+                            <a class="alert-item" href="{{ route('productos.show', $producto) }}">
+                                <strong><span>{{ $producto->codigo }} - {{ $producto->nombre }}</span><span>{{ number_format(abs((float) $producto->stock_actual), 2) }}</span></strong>
+                                <small>{{ $producto->categoria?->nombre ?? 'Sin categoría' }} · unidades faltantes · Abrir regularización</small>
+                            </a>
+                        @else
+                            <div class="alert-item">
+                                <strong><span>{{ $producto->codigo }} - {{ $producto->nombre }}</span><span>{{ number_format(abs((float) $producto->stock_actual), 2) }}</span></strong>
+                                <small>{{ $producto->categoria?->nombre ?? 'Sin categoría' }} · unidades faltantes</small>
+                            </div>
+                        @endif
+                    @empty
+                        <div class="compact-item">
+                            <div><b>Sin faltantes pendientes</b><small>No existen productos con stock negativo.</small></div>
+                            <span class="pill">OK</span>
+                        </div>
+                    @endforelse
+                </div>
+            </section>@endif
+
             @if($dashboardOpciones['ultimas_operaciones'])<section class="panel">
                 <h2>Ultimas operaciones</h2>
                 <div class="compact-list">
