@@ -70,4 +70,11 @@ class Venta extends Model
     {
         return $this->belongsTo(User::class, 'usuario_id');
     }
+
+    public function auditorias()
+    {
+        return $this->morphMany(AuditEvent::class, 'auditable')
+            ->where('accion', 'anulo')
+            ->latest();
+    }
 }

@@ -27,7 +27,7 @@ class SaleController extends Controller
             'anio' => ['nullable', 'integer', 'min:2000', 'max:2100'],
         ]);
 
-        $ventas = Venta::with('cliente', 'usuario')
+        $ventas = Venta::with('cliente', 'usuario', 'auditorias.usuario')
             ->withSum(['cobros as cobrado' => fn ($query) => $query->where('estado', 'registrado')], 'importe')
             ->withMax(['cobros as fecha_ultimo_cobro' => fn ($query) => $query->where('estado', 'registrado')], 'fecha')
             ->when($filters['buscar'] ?? null, function ($query, $buscar) {
@@ -139,7 +139,7 @@ class SaleController extends Controller
             abort_unless($venta->tipo_documento === 'nota_entrega', 404);
         }
         $cuotasDisponibles = Schema::hasTable('venta_cuotas');
-        $relations = ['cliente', 'detalles.producto', 'detalles.lotes.lote', 'usuario'];
+        $relations = ['cliente', 'detalles.producto', 'detalles.lotes.lote', 'usuario', 'auditorias.usuario'];
         if ($cuotasDisponibles) {
             $relations[] = 'cuotas.cobros';
         }
@@ -199,10 +199,6 @@ class SaleController extends Controller
 
     public function anular(Request $request, Venta $venta, SaleService $service)
     {
-        $request->validate(['totp_code' => ['required', 'string', 'max:32']]);
-        if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'ventas', $venta, 'Intento de anular venta')) {
-            return back()->withErrors(['totp_code' => $error]);
-        }
         $before = $venta->only(['estado']);
         try {
             $service->anular($venta, $request->user()->id);
