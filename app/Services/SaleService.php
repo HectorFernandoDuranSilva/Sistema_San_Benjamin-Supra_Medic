@@ -192,7 +192,8 @@ class SaleService
     /**
      * Removes a document entered in error and leaves the inventory ledger as if
      * the document had never been registered. Payments deliberately prevent
-     * deletion because they are accounting records that must not be orphaned.
+     * Active payments prevent deletion; cancelled payments are historical
+     * correction records and are removed with the document after TOTP approval.
      *
      * @return array<string, mixed>
      */
@@ -202,8 +203,8 @@ class SaleService
             $venta = Venta::whereKey($venta->id)->lockForUpdate()->firstOrFail();
             $venta->load('detalles.producto', 'detalles.lotes.lote');
 
-            if ($venta->cobros()->exists()) {
-                throw new InvalidArgumentException('El documento tiene cobros registrados o anulados. Regularice los cobros antes de eliminarlo definitivamente.');
+            if ($venta->cobros()->where('estado', 'registrado')->exists()) {
+                throw new InvalidArgumentException('El documento todavía tiene cobros registrados. Anule o regularice los cobros antes de eliminarlo definitivamente.');
             }
 
             $before = $venta->only([
@@ -222,6 +223,9 @@ class SaleService
                 ->where('referencia_id', $venta->id)
                 ->delete();
 
+            // The foreign key on cobros restricts deleting the sale. At this
+            // point only cancelled historical cobros may remain.
+            $venta->cobros()->delete();
             $venta->delete();
 
             foreach ($productosAfectados as $productoId) {
