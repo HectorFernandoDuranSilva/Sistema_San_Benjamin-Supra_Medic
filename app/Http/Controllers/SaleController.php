@@ -57,6 +57,9 @@ class SaleController extends Controller
     {
         $facturaStockPendiente = $request->boolean('stock_pendiente')
             && ! $request->routeIs('notas.*');
+        $tipoDocumento = $request->routeIs('notas.*')
+            ? 'nota_entrega'
+            : ($facturaStockPendiente || $request->query('tipo_documento') !== 'nota_entrega' ? 'factura' : 'nota_entrega');
         $rate = (float) (TipoCambio::where('estado', 'vigente')->latest('fecha')->latest('id')->value('valor') ?: TipoCambio::ultimoValor());
         $productos = Producto::with(['lotes' => fn ($query) => $query
             ->where('estado', 'activo')
@@ -93,7 +96,7 @@ class SaleController extends Controller
                 ])->values(),
             ])->values(),
             'commercial' => session('commercial_context'),
-            'tipoDocumento' => $request->routeIs('notas.*') || $request->query('tipo_documento') === 'nota_entrega' ? 'nota_entrega' : 'factura',
+            'tipoDocumento' => $tipoDocumento,
             'facturaStockPendiente' => $facturaStockPendiente,
             'esModuloNotas' => $request->routeIs('notas.*'),
             'siguienteNumero' => $sales->siguienteNumero(),
