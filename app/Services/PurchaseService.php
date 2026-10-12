@@ -61,6 +61,10 @@ class PurchaseService
                 'usuario_id' => $usuarioId,
             ]);
 
+            if (($data['plan_pago'] ?? 'contado') === 'cuotas') {
+                $this->registrarCuotas($compra, $data['cuotas'] ?? []);
+            }
+
             foreach ($items as $item) {
                 $producto = $productos->get((int) $item['producto_id']);
                 $cantidad = (float) $item['cantidad'];
@@ -109,7 +113,7 @@ class PurchaseService
                 );
             }
 
-            return $compra->load('detalles', 'proveedor', 'usuario');
+            return $compra->load('detalles', 'proveedor', 'usuario', 'cuotas');
         });
     }
 
@@ -121,5 +125,35 @@ class PurchaseService
             ->max() + 1;
 
         return 'C-' . str_pad((string) $next, 6, '0', STR_PAD_LEFT);
+    }
+
+    private function registrarCuotas(Compra $compra, array $cuotas): void
+    {
+        if (count($cuotas) < 2) {
+            throw new InvalidArgumentException('Para pago en cuotas registre por lo menos dos vencimientos.');
+        }
+        $totalCentavos = (int) round((float) $compra->total * 100);
+        $cuotasCentavos = 0;
+        $fechaAnterior = null;
+        foreach ($cuotas as $cuota) {
+            $fecha = $cuota['fecha_vencimiento'] ?? null;
+            $importeCentavos = (int) round((float) ($cuota['importe'] ?? 0) * 100);
+            if (! $fecha || $importeCentavos <= 0 || ($fechaAnterior && $fecha < $fechaAnterior)) {
+                throw new InvalidArgumentException('Revise las fechas e importes del calendario de cuotas.');
+            }
+            $fechaAnterior = $fecha;
+            $cuotasCentavos += $importeCentavos;
+        }
+        if ($cuotasCentavos !== $totalCentavos) {
+            throw new InvalidArgumentException('La suma de las cuotas debe ser igual al total de la compra.');
+        }
+        foreach (array_values($cuotas) as $index => $cuota) {
+            $compra->cuotas()->create([
+                'numero' => $index + 1,
+                'fecha_vencimiento' => $cuota['fecha_vencimiento'],
+                'importe' => $cuota['importe'],
+                'observacion' => $cuota['observacion'] ?? null,
+            ]);
+        }
     }
 }

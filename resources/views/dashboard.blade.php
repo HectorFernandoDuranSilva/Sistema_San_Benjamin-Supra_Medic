@@ -164,7 +164,7 @@
                 <h2>Cuotas por cobrar</h2>
                 <div class="compact-list">
                     <div class="compact-item">
-                        <div><b>{{ $cuentasPorCobrar['cantidad'] }} cuotas pendientes</b><small>Saldo pendiente de ventas registradas.</small></div>
+                        <div><b>{{ $cuentasPorCobrar['cantidad'] }} documentos por cobrar</b><small>Incluye facturas, notas y cuotas con saldo pendiente.</small></div>
                         <span class="pill">Bs {{ number_format($cuentasPorCobrar['importe'], 2) }}</span>
                     </div>
                     @forelse($cuotasConAtraso as $cuota)

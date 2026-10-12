@@ -71,7 +71,7 @@ class PurchaseController extends Controller
 
     public function show(Compra $compra)
     {
-        return view('compras.show', ['compra' => $compra->load('proveedor', 'detalles.producto', 'detalles.lote', 'usuario', 'pagos')]);
+        return view('compras.show', ['compra' => $compra->load('proveedor', 'detalles.producto', 'detalles.lote', 'usuario', 'pagos.cuota', 'cuotas.pagos')]);
     }
 
     public function storePayment(Request $request, Compra $compra, AuditLogService $audit)
@@ -82,6 +82,7 @@ class PurchaseController extends Controller
             'importe' => ['required', 'numeric', 'decimal:0,2', 'gt:0', 'max:999999999'],
             'medio' => ['required', 'in:efectivo,transferencia,deposito'],
             'referencia' => ['nullable', 'string', 'max:255'],
+            'cuota_id' => ['nullable', 'integer', 'exists:compra_cuotas,id'],
         ]);
 
         return DB::transaction(function () use ($request, $compra, $audit, $data) {
@@ -95,6 +96,20 @@ class PurchaseController extends Controller
             $saldo = round((float) $compra->total * 100) - round((float) $compra->pagos()->where('estado', 'registrado')->sum('importe') * 100);
             if ($compra->estado !== 'registrada' || round((float) $data['importe'] * 100) > $saldo) {
                 return back()->withErrors(['importe' => 'El importe supera el saldo pendiente o el documento no está registrado.']);
+            }
+
+            $cuotas = $compra->cuotas()->with('pagos')->lockForUpdate()->get();
+            if ($cuotas->isNotEmpty()) {
+                $cuota = $cuotas->firstWhere('id', (int) ($data['cuota_id'] ?? 0));
+                if (! $cuota) {
+                    return back()->withErrors(['cuota_id' => 'Seleccione la cuota a la que corresponde este pago.']);
+                }
+                $saldoCuota = round((float) $cuota->importe * 100) - round((float) $cuota->pagos()->where('estado', 'registrado')->sum('importe') * 100);
+                if (round((float) $data['importe'] * 100) > $saldoCuota) {
+                    return back()->withErrors(['importe' => 'El importe supera el saldo de la cuota seleccionada.']);
+                }
+            } elseif (! empty($data['cuota_id'])) {
+                return back()->withErrors(['cuota_id' => 'Esta compra no tiene un calendario de cuotas.']);
             }
 
             $pago = $compra->pagos()->create($data + ['usuario_id' => $request->user()->id]);

@@ -428,7 +428,7 @@ class ReportController extends Controller
         $nombreComercial = $request->input('nombre_comercial');
         $buscar = trim((string) $request->input('buscar'));
 
-        $ventasQuery = Venta::with('cliente', 'usuario')
+        $ventasQuery = Venta::with('cliente', 'usuario', 'cobros')
             ->where('estado', 'registrada')
             ->whereDate('fecha', '>=', $desde)
             ->whereDate('fecha', '<=', $hasta)
@@ -446,7 +446,7 @@ class ReportController extends Controller
             ->latest('fecha')
             ->latest('id');
 
-        $comprasQuery = Compra::with('proveedor', 'usuario')
+        $comprasQuery = Compra::with('proveedor', 'usuario', 'pagos')
             ->where('estado', 'registrada')
             ->whereDate('fecha', '>=', $desde)
             ->whereDate('fecha', '<=', $hasta)

@@ -51,6 +51,11 @@ class Compra extends Model
         return $this->hasMany(PagoCompra::class);
     }
 
+    public function cuotas()
+    {
+        return $this->hasMany(CompraCuota::class)->orderBy('numero');
+    }
+
     public function usuario()
     {
         return $this->belongsTo(User::class, 'usuario_id');

@@ -46,6 +46,7 @@ Route::middleware('auth')->group(function () {
     });
 
     Route::get('/historico-clientes', [\App\Http\Controllers\CustomerHistoryController::class, 'index'])->middleware('permission:reportes,historial_clientes')->name('clientes.historial');
+    Route::get('/notas-facturas/cobros', [\App\Http\Controllers\CustomerHistoryController::class, 'receivables'])->middleware('permission:notas_facturas')->name('notas-facturas.cobros');
     Route::get('/historico-clientes/pdf', [\App\Http\Controllers\CustomerHistoryController::class, 'pdf'])->middleware('permission:reportes,historial_clientes')->name('clientes.historial.pdf');
     Route::post('/ventas/{venta}/cobros', [\App\Http\Controllers\CustomerHistoryController::class, 'storePayment'])->middleware('permission:ventas')->name('ventas.cobros.store');
     Route::post('/cobros/{cobro}/anular', [\App\Http\Controllers\CustomerHistoryController::class, 'cancelPayment'])->middleware('permission:ventas')->name('cobros.anular');

@@ -35,6 +35,16 @@
     <div class="field"><label>No.</label><input name="numero_compra" value="{{ old('numero_compra') }}" placeholder="Automatico"></div>
 </div>
 
+<section id="plan-pago-compra" style="margin:16px 0;padding:14px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);">
+    <div class="row">
+        <div class="field"><label>Forma de pago</label><select id="plan-pago-compra-tipo" name="plan_pago"><option value="contado" @selected(old('plan_pago', 'contado') === 'contado')>Pago único</option><option value="cuotas" @selected(old('plan_pago') === 'cuotas')>Pago en cuotas</option></select></div>
+        <div class="field cuotas-compra-control" hidden><label>Número de cuotas</label><input id="cantidad-cuotas-compra" type="number" min="2" max="120" value="2"></div>
+        <div class="field cuotas-compra-control" hidden><label>Primer vencimiento</label><input id="primer-vencimiento-cuota-compra" type="date" value="{{ now()->addMonth()->toDateString() }}"></div>
+        <div class="field cuotas-compra-control" style="justify-content:end;" hidden><button type="button" id="generar-cuotas-compra" class="btn secondary">Generar cuotas</button></div>
+    </div>
+    <div id="calendario-cuotas-compra" hidden><p>La suma de las cuotas debe coincidir con el total de la compra.</p><table><thead><tr><th>Cuota</th><th>Vencimiento</th><th>Importe Bs</th><th>Detalle</th></tr></thead><tbody id="cuotas-compra-body"></tbody></table><p id="resumen-cuotas-compra"></p></div>
+</section>
+
 <div class="row">
     <div class="field"><label>NIT</label><input id="nit-proveedor" name="nit_proveedor" value="{{ old('nit_proveedor') }}"></div>
     <div class="field">
@@ -273,6 +283,41 @@ function updateTotals() {
     document.getElementById('total-descuento').textContent = money(descuento);
     document.getElementById('total-impuesto').textContent = money(impuesto);
     document.getElementById('total-final').textContent = money(total);
+    updateInstallmentSummary();
+}
+
+function generatePurchaseInstallments() {
+    const count = Math.max(2, Math.min(120, Number(document.getElementById('cantidad-cuotas-compra').value || 2)));
+    const first = document.getElementById('primer-vencimiento-cuota-compra').value;
+    const body = document.getElementById('cuotas-compra-body');
+    body.innerHTML = '';
+    const total = parseFloat(document.getElementById('total-final').textContent || '0');
+    const base = Math.floor((total / count) * 100) / 100;
+    for (let index = 0; index < count; index++) {
+        const date = new Date(`${first}T12:00:00`);
+        date.setMonth(date.getMonth() + index);
+        const amount = index === count - 1 ? total - (base * (count - 1)) : base;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${index + 1}<input type="hidden" name="cuotas[${index}][numero]" value="${index + 1}"></td><td><input class="cuota-compra-fecha" type="date" name="cuotas[${index}][fecha_vencimiento]" value="${date.toISOString().slice(0, 10)}" required></td><td><input class="cuota-compra-importe" type="number" step="0.01" min="0.01" name="cuotas[${index}][importe]" value="${money(amount)}" required></td><td><input name="cuotas[${index}][observacion]" maxlength="255"></td>`;
+        body.appendChild(tr);
+    }
+    updateInstallmentSummary();
+}
+
+function updateInstallmentSummary() {
+    const summary = document.getElementById('resumen-cuotas-compra');
+    if (!summary || document.getElementById('calendario-cuotas-compra').hidden) return;
+    const total = parseFloat(document.getElementById('total-final').textContent || '0');
+    const installments = Array.from(document.querySelectorAll('.cuota-compra-importe')).reduce((sum, input) => sum + (parseFloat(input.value) || 0), 0);
+    summary.textContent = `Total compra: Bs ${money(total)} · Total cuotas: Bs ${money(installments)} · Diferencia: Bs ${money(total - installments)}`;
+}
+
+function togglePurchaseInstallments() {
+    const enabled = document.getElementById('plan-pago-compra-tipo').value === 'cuotas';
+    document.querySelectorAll('.cuotas-compra-control').forEach(element => element.hidden = !enabled);
+    document.getElementById('calendario-cuotas-compra').hidden = !enabled;
+    document.querySelectorAll('#calendario-cuotas-compra input').forEach(input => input.disabled = !enabled);
+    if (enabled && document.querySelectorAll('.cuota-compra-importe').length === 0) generatePurchaseInstallments();
 }
 
 document.getElementById('producto-selector').addEventListener('change', refreshSelectedProduct);
@@ -280,6 +325,9 @@ document.getElementById('buscar-producto').addEventListener('input', filterProdu
 document.getElementById('buscar-proveedor').addEventListener('input', filterProviders);
 document.getElementById('costo-producto').addEventListener('input', updateSuggestedPrice);
 document.getElementById('porcentaje-utilidad').addEventListener('input', updateSuggestedPrice);
+document.getElementById('plan-pago-compra-tipo').addEventListener('change', togglePurchaseInstallments);
+document.getElementById('generar-cuotas-compra').addEventListener('click', generatePurchaseInstallments);
+document.getElementById('cuotas-compra-body').addEventListener('input', updateInstallmentSummary);
 document.getElementById('proveedor-id').addEventListener('change', function () {
     document.getElementById('nit-proveedor').value = this.selectedOptions[0]?.dataset.documento || '';
 });
@@ -296,6 +344,7 @@ document.querySelector('form[action="{{ route('compras.store') }}"]').addEventLi
 });
 
 refreshSelectedProduct();
+togglePurchaseInstallments();
 </script>
 @endsection
 

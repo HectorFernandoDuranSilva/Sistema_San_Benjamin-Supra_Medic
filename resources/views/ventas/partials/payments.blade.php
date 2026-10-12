@@ -6,7 +6,7 @@
 @php($paid = $payments->where('estado', 'registrado')->sum('importe'))
 @php($installments = $venta->cuotas()->with('cobros')->orderBy('numero')->get())
 <h2>Cobros</h2>
-<p>Cobrado: Bs {{ number_format($paid, 2) }} | Saldo: Bs {{ number_format(max(0, $venta->total - $paid), 2) }}</p>
+<p><strong>Estado: {{ $paid >= (float) $venta->total ? 'Pagada' : ($paid > 0 ? 'Pago parcial' : 'Por cobrar') }}</strong> · Total: Bs {{ number_format($venta->total, 2) }} · Cobrado: Bs {{ number_format($paid, 2) }} · Saldo: Bs {{ number_format(max(0, $venta->total - $paid), 2) }}</p>
 
 @if($installments->isNotEmpty())
     <table>
@@ -50,7 +50,7 @@
             <div class="field"><label>Medio de pago</label><select name="medio"><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="deposito">Depósito</option></select></div>
             <div class="field"><label>Referencia</label><input name="referencia" maxlength="255"></div>
         </div>
-        <button class="btn">Registrar cobro</button>
+        <div class="actions"><button type="button" class="btn secondary" data-finiquitar data-saldo="{{ number_format($venta->total - $paid, 2, '.', '') }}">Finiquitar saldo</button><button class="btn">Registrar cobro</button></div>
     </form>
 @endif
 
@@ -82,5 +82,14 @@
         </tr>
     @endforeach
 </table>
+<script>
+document.querySelectorAll('[data-finiquitar]').forEach(function (button) {
+    button.addEventListener('click', function () {
+        const form = button.closest('form');
+        const amount = form?.querySelector('input[name="importe"]');
+        if (amount) amount.value = button.dataset.saldo;
+    });
+});
+</script>
 </section>
 @endif

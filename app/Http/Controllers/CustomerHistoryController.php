@@ -55,6 +55,42 @@ class CustomerHistoryController extends Controller
         ]);
     }
 
+    public function receivables(Request $request)
+    {
+        $documentos = Venta::with(['cliente', 'cobros', 'cuotas.cobros'])
+            ->where('estado', 'registrada')
+            ->when($request->input('tipo_documento'), fn ($q, $tipo) => $q->where('tipo_documento', $tipo))
+            ->when($request->input('nombre_comercial'), fn ($q, $nombre) => $q->where('nombre_comercial', $nombre))
+            ->when(trim((string) $request->input('buscar')) !== '', function ($q) use ($request) {
+                $buscar = '%' . trim((string) $request->input('buscar')) . '%';
+                $q->where(function ($q) use ($buscar) {
+                    $q->where('numero_venta', 'like', $buscar)
+                        ->orWhere('factura', 'like', $buscar)
+                        ->orWhere('nit_cliente', 'like', $buscar)
+                        ->orWhereHas('cliente', fn ($cliente) => $cliente->where('nombre', 'like', $buscar));
+                });
+            })
+            ->latest('fecha')->latest('id')->get()
+            ->map(function (Venta $venta) {
+                $pagado = (float) $venta->cobros->where('estado', 'registrado')->sum('importe');
+                $venta->cobrado_actual = $pagado;
+                $venta->saldo_actual = max(0, (float) $venta->total - $pagado);
+                $venta->cuotas_pendientes = $venta->cuotas->filter(function ($cuota) {
+                    return (float) $cuota->importe > (float) $cuota->cobros->where('estado', 'registrado')->sum('importe');
+                })->count();
+                $venta->estado_pago = $venta->saldo_actual <= 0 ? 'Pagada' : ($pagado > 0 ? 'Pago parcial' : 'Por cobrar');
+
+                return $venta;
+            })
+            ->filter(fn (Venta $venta) => $venta->saldo_actual > 0)
+            ->values();
+
+        return view('clientes.cobros', [
+            'documentos' => $documentos,
+            'filtros' => $request->only(['buscar', 'tipo_documento', 'nombre_comercial']),
+        ]);
+    }
+
     public function pdf(Request $request)
     {
         $f = $this->filters($request); $query = $this->sales($f);

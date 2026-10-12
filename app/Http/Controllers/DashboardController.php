@@ -117,10 +117,21 @@ class DashboardController extends Controller
             ->filter(fn (VentaCuota $cuota) => $cuota->saldo_pendiente > 0)
             ->values();
 
+        $documentos = Venta::with('cobros')
+            ->where('estado', 'registrada')
+            ->get()
+            ->map(function (Venta $venta) {
+                $pagado = (float) $venta->cobros->where('estado', 'registrado')->sum('importe');
+                $venta->saldo_pendiente = max(0, (float) $venta->total - $pagado);
+                return $venta;
+            })
+            ->filter(fn (Venta $venta) => $venta->saldo_pendiente > 0)
+            ->values();
+
         return [
             'pendientes' => [
-                'cantidad' => $cuotas->count(),
-                'importe' => $cuotas->sum('saldo_pendiente'),
+                'cantidad' => $documentos->count(),
+                'importe' => $documentos->sum('saldo_pendiente'),
             ],
             'atrasadas' => $cuotas
                 ->filter(fn (VentaCuota $cuota) => $cuota->fecha_vencimiento->lte(today()->subDays($diasAtraso)))

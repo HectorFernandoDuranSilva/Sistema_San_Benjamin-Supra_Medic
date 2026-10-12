@@ -10,6 +10,7 @@ class PagoCompra extends Model
 
     protected $fillable = [
         'compra_id',
+        'cuota_id',
         'usuario_id',
         'token',
         'fecha',
@@ -28,5 +29,10 @@ class PagoCompra extends Model
     public function compra()
     {
         return $this->belongsTo(Compra::class);
+    }
+
+    public function cuota()
+    {
+        return $this->belongsTo(CompraCuota::class, 'cuota_id');
     }
 }

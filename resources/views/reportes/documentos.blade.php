@@ -7,6 +7,9 @@
         @if(auth()->user()->hasPermission('ventas'))
             <a class="btn" href="{{ route('notas.create') }}">Crear nota de entrega</a>
         @endif
+        @if(auth()->user()->hasPermission('notas_facturas'))
+            <a class="btn secondary" href="{{ route('notas-facturas.cobros') }}">Cuentas por cobrar</a>
+        @endif
         <a class="btn secondary" href="{{ route('reportes.documentos.pdf', request()->query()) }}">Descargar PDF</a>
         <a class="btn secondary" href="{{ route('reportes.documentos.excel', request()->query()) }}">Descargar Excel</a>
         <a class="btn secondary" href="{{ route('reportes.ventas') }}">Ventas</a>
@@ -89,7 +92,7 @@
         @endif
     </div>
     <table>
-        <tr><th>Fecha</th><th>No.</th><th>Nombre comercial</th><th>NIT</th><th>Cliente</th><th>Total</th><th>Acciones</th></tr>
+        <tr><th>Fecha</th><th>No.</th><th>Nombre comercial</th><th>NIT</th><th>Cliente</th><th>Total</th><th>Estado de cobro</th><th>Acciones</th></tr>
         @forelse($notas as $nota)
             <tr>
                 <td>{{ $nota->fecha->format('d/m/Y') }}</td>
@@ -98,10 +101,13 @@
                 <td>{{ $nota->nit_cliente }}</td>
                 <td>{{ $nota->cliente?->nombre_mostrable ?? 'Sin cliente' }}</td>
                 <td>Bs {{ number_format($nota->total, 2) }}</td>
+                @php($notaPagado = (float) $nota->cobros->where('estado', 'registrado')->sum('importe'))
+                <td>{{ $notaPagado >= (float) $nota->total ? 'Pagada' : ($notaPagado > 0 ? 'Pago parcial' : 'Por cobrar') }}<br><small>Saldo: Bs {{ number_format(max(0, (float) $nota->total - $notaPagado), 2) }}</small></td>
                 <td>
                     @if(auth()->user()->hasPermission('ventas'))
                         <div class="actions">
                             <a class="btn secondary" href="{{ route('notas.show', $nota) }}">Ver nota</a>
+                            <a class="btn secondary" href="{{ route('notas.show', $nota) }}#cobros">Cobros</a>
                             <a class="btn secondary" href="{{ route('ventas.recibo', $nota) }}" target="_blank">Vista previa</a>
                             <a class="btn secondary" href="{{ route('ventas.pdf', $nota) }}">PDF</a>
                             <a class="btn secondary" href="{{ route('ventas.historial.edit', $nota) }}">Editar</a>
@@ -112,7 +118,7 @@
                 </td>
             </tr>
         @empty
-            <tr><td colspan="7">Sin notas de entrega en el rango seleccionado.</td></tr>
+            <tr><td colspan="8">Sin notas de entrega en el rango seleccionado.</td></tr>
         @endforelse
     </table>
     {{ $notas->fragment('notas-entrega')->links() }}
@@ -121,7 +127,7 @@
 <div class="card" style="margin-top:16px;">
     <h2>Detalle de ventas facturadas</h2>
     <table>
-        <tr><th>Fecha</th><th>No.</th><th>Documento</th><th>Nombre comercial</th><th>NIT</th><th>Cliente</th><th>Total</th><th>Acciones</th></tr>
+        <tr><th>Fecha</th><th>No.</th><th>Documento</th><th>Nombre comercial</th><th>NIT</th><th>Cliente</th><th>Total</th><th>Estado de cobro</th><th>Acciones</th></tr>
         @forelse($ventas as $venta)
             <tr>
                 <td>{{ $venta->fecha->format('d/m/Y') }}</td>
@@ -131,10 +137,13 @@
                 <td>{{ $venta->nit_cliente }}</td>
                 <td>{{ $venta->cliente?->nombre_mostrable ?? 'Sin cliente' }}</td>
                 <td>Bs {{ number_format($venta->total, 2) }}</td>
+                @php($ventaPagado = (float) $venta->cobros->where('estado', 'registrado')->sum('importe'))
+                <td>{{ $ventaPagado >= (float) $venta->total ? 'Pagada' : ($ventaPagado > 0 ? 'Pago parcial' : 'Por cobrar') }}<br><small>Saldo: Bs {{ number_format(max(0, (float) $venta->total - $ventaPagado), 2) }}</small></td>
                 <td>
                     @if(auth()->user()->hasPermission('ventas'))
                         <div class="actions" style="gap:8px;">
                             <a class="btn secondary" href="{{ route('ventas.recibo', $venta) }}" target="_blank">Vista previa</a>
+                            <a class="btn secondary" href="{{ route('ventas.show', $venta) }}#cobros">Cobros</a>
                             <a class="btn secondary" href="{{ route('ventas.pdf', $venta) }}">PDF</a>
                             <a class="btn secondary" href="{{ route('ventas.historial.edit', $venta) }}">Editar</a>
                         </div>
@@ -144,7 +153,7 @@
                 </td>
             </tr>
         @empty
-            <tr><td colspan="8">Sin ventas registradas.</td></tr>
+            <tr><td colspan="9">Sin ventas registradas.</td></tr>
         @endforelse
     </table>
     {{ $ventas->links() }}
