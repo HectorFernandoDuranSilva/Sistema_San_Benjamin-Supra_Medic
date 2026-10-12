@@ -161,7 +161,7 @@
             </section>@endif
 
             @if($dashboardOpciones['cuotas'])<section class="panel">
-                <h2>Cuotas por cobrar</h2>
+                <div class="top"><h2>Cuentas y cuotas por cobrar</h2>@if(auth()->user()->hasPermission('notas_facturas'))<a class="btn secondary" href="{{ route('notas-facturas.cobros') }}">Ver cartera</a>@endif</div>
                 <div class="compact-list">
                     <div class="compact-item">
                         <div><b>{{ $cuentasPorCobrar['cantidad'] }} documentos por cobrar</b><small>Incluye facturas, notas y cuotas con saldo pendiente.</small></div>
