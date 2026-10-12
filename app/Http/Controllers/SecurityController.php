@@ -114,6 +114,7 @@ class SecurityController extends Controller
             'ventas_hoy' => 'Ventas del día',
             'total_vendido' => 'Total vendido',
             'stock_bajo' => 'Stock bajo',
+            'stock_pendiente' => 'Faltantes por regularizar',
             'movimientos' => 'Movimientos de inventario',
             'cuentas_cobrar' => 'Cuentas por cobrar',
             'movimiento_mensual' => 'Movimiento mensual',
@@ -126,6 +127,7 @@ class SecurityController extends Controller
     {
         return [
             'alertas_datos' => 'Alertas de datos',
+            'faltantes_stock' => 'Aviso de faltantes de stock',
             'vencimientos' => 'Vencimientos próximos',
             'cuotas' => 'Cuotas vencidas',
             'facturacion_mensual' => 'Aviso de facturación mensual',

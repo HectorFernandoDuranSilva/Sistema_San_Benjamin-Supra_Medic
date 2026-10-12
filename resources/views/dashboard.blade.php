@@ -37,6 +37,7 @@
             @if($dashboardOpciones['ventas_hoy'])<div class="metric"><span>Ventas del dia</span><strong>{{ $ventasHoy }}</strong></div>@endif
             @if($dashboardOpciones['total_vendido'])<div class="metric"><span>Total vendido</span><strong>Bs {{ number_format($totalHoy, 2) }}</strong></div>@endif
             @if($dashboardOpciones['stock_bajo'])<div class="metric"><span>Stock bajo</span><strong>{{ $productosBajoStock->count() }}</strong></div>@endif
+            @if($dashboardOpciones['stock_pendiente'])<div class="metric"><span>Faltantes por regularizar</span><strong>{{ $productosStockNegativo->count() }}</strong></div>@endif
             @if($dashboardOpciones['movimientos'])<div class="metric"><span>Movimientos</span><strong>{{ $ultimosMovimientos->count() }}</strong></div>@endif
             @if($dashboardOpciones['cuentas_cobrar'])<div class="metric"><span>Cuentas por cobrar</span><strong>Bs {{ number_format($cuentasPorCobrar['importe'], 2) }}</strong></div>@endif
         </div>
@@ -233,6 +234,36 @@
             <div class="glass-modal-actions">
                 @if(auth()->user()->hasPermission('inventario'))
                     <a class="btn secondary" href="{{ route('inventario.lotes.index', ['estado' => 'activo']) }}">Ver lotes</a>
+                @endif
+                <button type="button" class="btn" data-glass-close>Entendido</button>
+            </div>
+        </div>
+    </div>
+@endif
+
+@if($dashboardOpciones['faltantes_stock'] && $productosStockNegativo->isNotEmpty())
+    <div class="glass-modal-backdrop is-open" role="dialog" aria-modal="true" data-dashboard-alert>
+        <div class="glass-modal is-error">
+            <h2>Faltantes de stock por regularizar</h2>
+            <p>Estos productos tienen existencias negativas. Registra la regularización desde la ficha de cada producto.</p>
+            <div class="compact-list" style="margin-top:14px;">
+                @foreach($productosStockNegativo->take(8) as $producto)
+                    @if(auth()->user()->hasPermission('productos'))
+                        <a class="alert-item" href="{{ route('productos.show', $producto) }}">
+                            <strong><span>{{ $producto->codigo }} - {{ $producto->nombre }}</span><span>{{ number_format($producto->stock_actual, 2) }}</span></strong>
+                            <small>Faltan {{ number_format(abs((float) $producto->stock_actual), 2) }} unidades · Abrir regularización</small>
+                        </a>
+                    @else
+                        <div class="alert-item">
+                            <strong><span>{{ $producto->codigo }} - {{ $producto->nombre }}</span><span>{{ number_format($producto->stock_actual, 2) }}</span></strong>
+                            <small>Faltan {{ number_format(abs((float) $producto->stock_actual), 2) }} unidades</small>
+                        </div>
+                    @endif
+                @endforeach
+            </div>
+            <div class="glass-modal-actions">
+                @if(auth()->user()->hasPermission('productos'))
+                    <a class="btn secondary" href="{{ route('productos.index') }}">Ver productos</a>
                 @endif
                 <button type="button" class="btn" data-glass-close>Entendido</button>
             </div>
