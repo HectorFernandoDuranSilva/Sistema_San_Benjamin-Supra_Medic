@@ -66,7 +66,7 @@
                 <th>Lote</th>
                 <th>Referencia</th>
                 <th>Tercero</th>
-                <th>Usuario</th>
+                <th>Usuario que registró</th>
             </tr>
         </thead>
         <tbody>
@@ -85,7 +85,7 @@
                     <td>{{ $m->kardex_lote }}</td>
                     <td>{{ $m->kardex_documento }}</td>
                     <td>{{ $m->kardex_tercero }}</td>
-                    <td>{{ $m->usuario?->name }}</td>
+                    <td>{{ $m->usuario?->name ?: $m->usuario?->username ?: 'Sin usuario registrado (histórico)' }}</td>
                 </tr>
             @empty
                 <tr><td colspan="13">No hay movimientos para los filtros seleccionados.</td></tr>

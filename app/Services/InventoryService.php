@@ -33,6 +33,10 @@ class InventoryService
         ?float $costoEntrada = null,
         bool $permitirStockNegativo = false
     ): MovimientoInventario {
+        // Keep the authenticated operator attached even when a caller does
+        // not pass the id explicitly.
+        $usuarioId ??= auth()->id();
+
         if (!is_finite($cantidad) || $cantidad <= 0 || ($costoEntrada !== null && (!is_finite($costoEntrada) || $costoEntrada <= 0))) {
             throw new InvalidArgumentException('La cantidad debe ser mayor a cero.');
         }
