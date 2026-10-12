@@ -6,10 +6,16 @@ use App\Models\InventarioLote;
 use App\Models\ConfiguracionEmpresa;
 use App\Models\Producto;
 use App\Services\AuditLogService;
+use App\Services\InventoryService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class InventoryBatchController extends Controller
 {
+    public function __construct(private readonly InventoryService $inventory)
+    {
+    }
+
     public function index(Request $request)
     {
         $diasAlertaVencimiento = max(1, (int) (ConfiguracionEmpresa::firstOrCreate([])->dias_alerta_vencimiento ?? 30));
@@ -101,25 +107,45 @@ class InventoryBatchController extends Controller
 
         $before = $lote->only(['codigo_lote', 'fecha_vencimiento', 'cantidad_disponible', 'estado', 'observacion']);
         $tieneConsumos = $lote->consumos()->exists();
-        if ($tieneConsumos) {
-            // Preserve consumed-lot history while removing it from active availability.
-            $lote->update([
-                'estado' => 'inactivo',
-                'cantidad_disponible' => 0,
-                'observacion' => trim(($lote->observacion ? $lote->observacion . "\n" : '') . 'Lote eliminado manualmente; se conserva por historial.'),
-            ]);
-        } else {
-            $lote->delete();
-        }
-        app(AuditLogService::class)->record(
-            $request,
-            'elimino',
-            'lotes',
-            $lote,
-            $before,
-            $tieneConsumos ? $lote->only(array_keys($before)) : null,
-            $tieneConsumos ? 'Lote retirado de disponibilidad; se conserva por historial.' : 'Lote eliminado definitivamente.'
-        );
+        $cantidadDisponible = round((float) $lote->cantidad_disponible, 2);
+        $producto = $lote->producto()->firstOrFail();
+
+        DB::transaction(function () use ($request, $lote, $producto, $cantidadDisponible, $tieneConsumos, $before) {
+            if ($cantidadDisponible > 0) {
+                // Retiring a lot must also remove its remaining units from the
+                // product ledger; otherwise the product stock stays inflated.
+                $this->inventory->registrarMovimiento(
+                    $producto,
+                    'ajuste_negativo',
+                    $cantidadDisponible,
+                    'lote',
+                    $lote->id,
+                    $request->user()->id,
+                    'Existencia retirada al eliminar lote'
+                );
+            }
+
+            if ($tieneConsumos) {
+                // Preserve consumed-lot history while removing it from active availability.
+                $lote->update([
+                    'estado' => 'inactivo',
+                    'cantidad_disponible' => 0,
+                    'observacion' => trim(($lote->observacion ? $lote->observacion . "\n" : '') . 'Lote eliminado manualmente; se conserva por historial.'),
+                ]);
+            } else {
+                $lote->delete();
+            }
+
+            app(AuditLogService::class)->record(
+                $request,
+                'elimino',
+                'lotes',
+                $lote,
+                $before,
+                $tieneConsumos ? $lote->only(array_keys($before)) : null,
+                $tieneConsumos ? 'Lote retirado de disponibilidad; se conserva por historial.' : 'Lote eliminado definitivamente.'
+            );
+        });
 
         return back()->with('ok', $tieneConsumos
             ? 'Lote retirado de disponibilidad y conservado por historial.'
