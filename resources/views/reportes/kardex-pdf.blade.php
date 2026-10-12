@@ -43,7 +43,7 @@
     <table>
         <thead>
             <tr>
-                <th>Fecha</th>
+                <th>Fecha / hora de registro</th>
                 <th>Código</th>
                 <th>Producto</th>
                 <th>Tipo</th>
@@ -62,7 +62,8 @@
         <tbody>
             @foreach($movimientos as $m)
                 <tr>
-                    <td>{{ $m->fecha_movimiento->format('d/m/Y H:i') }}</td>
+                    @php($horaRegistro = $m->created_at ?: $m->fecha_movimiento)
+                    <td>{{ $m->fecha_movimiento->format('d/m/Y') }}<br>{{ $horaRegistro->format('H:i') }}</td>
                     <td>{{ $m->producto?->codigo }}</td>
                     <td>{{ $m->producto?->nombre }}</td>
                     <td>{{ ucfirst(str_replace('_', ' ', $m->tipo_movimiento)) }}</td>

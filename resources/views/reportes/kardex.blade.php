@@ -54,7 +54,7 @@
     <table>
         <thead>
             <tr>
-                <th>Fecha</th>
+                <th>Fecha / hora de registro</th>
                 <th>Producto</th>
                 <th>Tipo</th>
                 <th>Entrada</th>
@@ -72,7 +72,8 @@
         <tbody>
             @forelse($movimientos as $m)
                 <tr>
-                    <td>{{ $m->fecha_movimiento->format('d/m/Y H:i') }}</td>
+                    @php($horaRegistro = $m->created_at ?: $m->fecha_movimiento)
+                    <td>{{ $m->fecha_movimiento->format('d/m/Y') }}<br><small>{{ $horaRegistro->format('H:i') }}</small></td>
                     <td>{{ $m->producto?->codigo }} {{ $m->producto?->nombre }}</td>
                     <td>{{ ucfirst(str_replace('_', ' ', $m->tipo_movimiento)) }}</td>
                     <td>{{ in_array($m->tipo_movimiento, ['entrada', 'ajuste_positivo', 'devolucion', 'anulacion'], true) ? number_format($m->cantidad, 2) : '-' }}</td>
