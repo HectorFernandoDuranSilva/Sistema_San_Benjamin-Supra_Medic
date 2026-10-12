@@ -87,4 +87,38 @@ class DeliveryNoteWithoutStockTest extends TestCase
 
         $this->assertDatabaseMissing('ventas', ['numero_venta' => 'V-NOTA-BLOQUEADA']);
     }
+
+    public function test_invoice_can_be_recorded_with_explicit_pending_stock_and_stays_an_invoice(): void
+    {
+        $user = User::factory()->create(['activo' => true]);
+        $category = Categoria::create(['nombre' => 'Reactivos', 'activo' => true]);
+        $product = Producto::create([
+            'codigo' => 'SIN-STOCK-FACTURA',
+            'nombre' => 'Reactivo facturado pendiente',
+            'categoria_id' => $category->id,
+            'precio_venta' => 25,
+            'costo_referencial' => 10,
+            'stock_minimo' => 0,
+            'activo' => true,
+        ]);
+
+        $sale = app(SaleService::class)->registrar([
+            'numero_venta' => 'V-FACTURA-PENDIENTE',
+            'nombre_comercial' => 'San Benjamin',
+            'tipo_documento' => 'factura',
+            'factura_stock_pendiente' => true,
+            'permitir_salida_sin_stock' => true,
+            'motivo_salida_sin_stock' => 'Factura urgente pendiente de ingreso.',
+            'fecha' => now()->toDateString(),
+            'items' => [[
+                'producto_id' => $product->id,
+                'cantidad' => 2,
+                'precio_unitario' => 25,
+            ]],
+        ], $user->id);
+
+        $this->assertSame('factura', $sale->tipo_documento);
+        $this->assertTrue($sale->permitir_salida_sin_stock);
+        $this->assertSame(-2.0, app(InventoryService::class)->stockActual($product));
+    }
 }

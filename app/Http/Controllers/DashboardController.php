@@ -258,7 +258,6 @@ class DashboardController extends Controller
             ->where('referencia_tipo', 'venta')
             ->whereIn('producto_id', $productosStockNegativo->pluck('id'))
             ->whereHas('venta', fn ($query) => $query
-                ->where('tipo_documento', 'nota_entrega')
                 ->where('permitir_salida_sin_stock', true)
                 ->where('estado', 'registrada'))
             ->latest('fecha_movimiento')
@@ -294,7 +293,7 @@ class DashboardController extends Controller
                 'permiso' => 'inventario',
             ],
             [
-                'titulo' => 'Entregas sin stock pendientes',
+                'titulo' => 'Documentos con stock pendiente',
                 'total' => $entregasSinStockPendientes->count(),
                 'detalle' => $entregasSinStockPendientes->take(2)->map(fn ($movimiento) => $movimiento->producto?->nombre . ' (' . number_format(abs((float) $movimiento->producto?->stock_actual), 2) . ' faltante)')->join(', ') ?: 'Sin pendientes',
                 'ruta' => route('inventario.index', ['stock_hasta' => 0]),

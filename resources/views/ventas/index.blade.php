@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="top"><h1>Ventas</h1><div class="actions"><a class="btn" href="{{ route('ventas.create') }}">Nueva venta</a></div></div>
+<div class="top"><h1>Ventas</h1><div class="actions"><a class="btn" href="{{ route('ventas.create') }}">Nueva venta</a><a class="btn secondary" href="{{ route('ventas.create', ['stock_pendiente' => 1]) }}">Nueva factura con stock pendiente</a></div></div>
 <form class="card" method="get" style="margin-bottom:12px;">
     <div class="row">
         <div class="field"><label>Buscar</label><input name="buscar" value="{{ $filters['buscar'] ?? '' }}" placeholder="N.º de venta, factura, NIT o cliente"></div>
@@ -14,7 +14,7 @@
 <div class="card"><table><tr><th>No.</th><th>Orden</th><th>Documento</th><th>Fecha</th><th>Factura</th><th>NIT</th><th>Cliente</th><th>Total</th><th>Documento</th><th>Pago</th><th>Usuario</th><th></th></tr>
 @foreach($ventas as $venta)
 @php($cobrado = (float) ($venta->cobrado ?? 0))
-<tr><td>{{ $venta->numero_venta }}</td><td>{{ $venta->nombre_comercial }}</td><td>{{ $venta->tipo_documento === 'nota_entrega' ? 'Nota de entrega' : 'Factura' }}</td><td>{{ $venta->fecha->format('d/m/Y') }}</td><td>{{ $venta->factura }}</td><td>{{ $venta->nit_cliente }}</td><td>{{ $venta->cliente?->nombre_mostrable ?? 'Sin cliente' }}</td><td>Bs {{ number_format($venta->total, 2) }}</td><td>{{ ucfirst($venta->estado) }}</td><td>@if($venta->tipo_documento === 'nota_entrega' || $venta->estado === 'anulada')No aplica @elseif($cobrado >= (float) $venta->total)Pagada<br><small>{{ \Illuminate\Support\Carbon::parse($venta->fecha_ultimo_cobro)->format('d/m/Y') }}</small> @elseif($cobrado > 0)Parcial<br><small>Saldo: Bs {{ number_format($venta->total - $cobrado, 2) }}</small> @else Pendiente @endif</td><td>{{ $venta->usuario?->name }}</td><td><div class="actions" style="gap:8px;"><a href="{{ route($venta->tipo_documento === 'nota_entrega' ? 'notas.show' : 'ventas.show', $venta) }}">Ver</a><a href="{{ route('ventas.recibo', $venta) }}">Vista previa</a><a href="{{ route('ventas.historial.edit', $venta) }}">Editar</a></div></td></tr>
+<tr><td>{{ $venta->numero_venta }}</td><td>{{ $venta->nombre_comercial }}</td><td>{{ $venta->tipo_documento === 'nota_entrega' ? 'Nota de entrega' : 'Factura' }} @if($venta->permitir_salida_sin_stock)<br><small>Stock pendiente</small>@endif</td><td>{{ $venta->fecha->format('d/m/Y') }}</td><td>{{ $venta->factura }}</td><td>{{ $venta->nit_cliente }}</td><td>{{ $venta->cliente?->nombre_mostrable ?? 'Sin cliente' }}</td><td>Bs {{ number_format($venta->total, 2) }}</td><td>{{ ucfirst($venta->estado) }}</td><td>@if($venta->tipo_documento === 'nota_entrega' || $venta->estado === 'anulada')No aplica @elseif($cobrado >= (float) $venta->total)Pagada<br><small>{{ \Illuminate\Support\Carbon::parse($venta->fecha_ultimo_cobro)->format('d/m/Y') }}</small> @elseif($cobrado > 0)Parcial<br><small>Saldo: Bs {{ number_format($venta->total - $cobrado, 2) }}</small> @else Pendiente @endif</td><td>{{ $venta->usuario?->name }}</td><td><div class="actions" style="gap:8px;"><a href="{{ route($venta->tipo_documento === 'nota_entrega' ? 'notas.show' : 'ventas.show', $venta) }}">Ver</a><a href="{{ route('ventas.recibo', $venta) }}">Vista previa</a><a href="{{ route('ventas.historial.edit', $venta) }}">Editar</a></div></td></tr>
 @endforeach
 </table>{{ $ventas->links() }}</div>
 @endsection

@@ -55,6 +55,8 @@ class SaleController extends Controller
 
     public function create(Request $request, SaleService $sales, \App\Services\InventoryService $inventory)
     {
+        $facturaStockPendiente = $request->boolean('stock_pendiente')
+            && ! $request->routeIs('notas.*');
         $rate = (float) (TipoCambio::where('estado', 'vigente')->latest('fecha')->latest('id')->value('valor') ?: TipoCambio::ultimoValor());
         $productos = Producto::with(['lotes' => fn ($query) => $query
             ->where('estado', 'activo')
@@ -92,6 +94,7 @@ class SaleController extends Controller
             ])->values(),
             'commercial' => session('commercial_context'),
             'tipoDocumento' => $request->routeIs('notas.*') || $request->query('tipo_documento') === 'nota_entrega' ? 'nota_entrega' : 'factura',
+            'facturaStockPendiente' => $facturaStockPendiente,
             'esModuloNotas' => $request->routeIs('notas.*'),
             'siguienteNumero' => $sales->siguienteNumero(),
         ]);
@@ -108,12 +111,14 @@ class SaleController extends Controller
             if ($venta->permitir_salida_sin_stock) {
                 app(AuditLogService::class)->record(
                     $request,
-                    'registrar_entrega_sin_stock',
-                    'notas_entrega',
+                    $venta->tipo_documento === 'nota_entrega' ? 'registrar_entrega_sin_stock' : 'registrar_factura_stock_pendiente',
+                    $venta->tipo_documento === 'nota_entrega' ? 'notas_entrega' : 'ventas',
                     $venta,
                     null,
                     $venta->only(['numero_venta', 'motivo_salida_sin_stock']),
-                    'Nota de entrega registrada con faltante de inventario.'
+                    $venta->tipo_documento === 'nota_entrega'
+                        ? 'Nota de entrega registrada con faltante de inventario.'
+                        : 'Factura registrada con stock pendiente.'
                 );
             }
         } catch (InvalidArgumentException $e) {

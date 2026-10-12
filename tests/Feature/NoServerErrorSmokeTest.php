@@ -38,6 +38,7 @@ class NoServerErrorSmokeTest extends TestCase
             'inventario/lotes',
             'ventas',
             'ventas/create',
+            'ventas/create?stock_pendiente=1',
             'notas-facturas/notas/crear',
             'compras',
             'compras/create',

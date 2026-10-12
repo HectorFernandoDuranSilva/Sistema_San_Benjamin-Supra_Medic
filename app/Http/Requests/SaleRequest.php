@@ -27,6 +27,7 @@ class SaleRequest extends FormRequest
             'descuento' => ['nullable', 'numeric', 'min:0'],
             'observacion' => ['nullable', 'string'],
             'permitir_salida_sin_stock' => ['nullable', 'boolean'],
+            'factura_stock_pendiente' => ['nullable', 'boolean'],
             'motivo_salida_sin_stock' => ['nullable', 'string', 'max:1000', 'required_if:permitir_salida_sin_stock,1'],
             'plan_pago' => ['nullable', 'in:contado,cuotas'],
             'cuotas' => ['nullable', 'array', 'min:2', 'max:120'],

@@ -15,6 +15,8 @@
 <form class="card" method="post" action="{{ $producto->exists ? route('productos.update', $producto) : route('productos.store') }}">
     @csrf
     @if($producto->exists) @method('put') @endif
+    <h2 style="font-size:20px;margin:0 0 12px;">Identificación del producto</h2>
+    <p class="muted" style="margin-top:-4px;">Complete el nombre, categoría, marca y procedencia para que el producto pueda encontrarse correctamente en compras, ventas, inventario y cotizaciones.</p>
     <div class="row">
         <div class="field"><label>Código</label><input name="codigo" value="{{ old('codigo', $producto->codigo) }}" required></div>
         <div class="field"><label>Nombre</label><input name="nombre" value="{{ old('nombre', $producto->nombre) }}" required></div>
@@ -25,6 +27,7 @@
         <div class="field"><label for="marca">Marca</label><input id="marca" name="marca" maxlength="255" value="{{ old('marca', $producto->marca) }}" required></div>
         <div class="field"><label for="procedencia">Procedencia</label><input id="procedencia" name="procedencia" maxlength="255" value="{{ old('procedencia', $producto->procedencia) }}" required></div>
     </div>
+    <h2 style="font-size:20px;margin:18px 0 12px;">Costos y precios</h2>
     <div class="row">
         <div class="field"><label>Ubicación</label><input name="ubicacion" value="{{ old('ubicacion', $producto->ubicacion) }}"></div>
         <div class="field"><label>Moneda del costo</label><select id="moneda-costo" name="moneda_costo"><option value="usd" @selected(old('moneda_costo', $producto->moneda_costo ?? 'usd') === 'usd')>Dólares (USD)</option><option value="bs" @selected(old('moneda_costo', $producto->moneda_costo ?? 'usd') === 'bs')>Bolivianos (Bs)</option></select></div>
@@ -40,6 +43,8 @@
         <div class="field"><label>Stock mínimo</label><input type="number" step="0.01" min="0" name="stock_minimo" value="{{ old('stock_minimo', $producto->stock_minimo ?? 0) }}"></div>
     </div>
     @unless($producto->exists)
+        <h2 style="font-size:20px;margin:18px 0 12px;">Inventario inicial</h2>
+        <p class="muted" style="margin-top:-4px;">El lote inicial es opcional. Para ingresos posteriores use Compras y así quedará registrado el movimiento.</p>
         <div class="row">
             <div class="field"><label>Stock inicial</label><input type="number" step="0.01" min="0" name="stock_inicial" value="{{ old('stock_inicial', 0) }}"></div>
             <div class="field"><label>Número de lote inicial</label><input name="codigo_lote" value="{{ old('codigo_lote') }}"></div>

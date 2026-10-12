@@ -2,6 +2,7 @@
 
 @section('content')
 @php($esNota = old('tipo_documento', $tipoDocumento ?? 'factura') === 'nota_entrega')
+@php($facturaStockPendiente = $facturaStockPendiente ?? false)
 <div class="top">
     <h1 id="titulo-documento">{{ $esNota ? 'Nueva nota de entrega' : 'Registro de ventas' }}</h1>
     <div class="actions">
@@ -23,11 +24,12 @@
     </div>
     <div class="field">
         <label>Tipo documento</label>
-        <select name="tipo_documento" id="tipo-documento" @disabled($esModuloNotas ?? false)>
+        <select name="tipo_documento" id="tipo-documento" @disabled(($esModuloNotas ?? false) || $facturaStockPendiente)>
             <option value="factura" @selected(!$esNota)>Factura</option>
             <option value="nota_entrega" @selected($esNota)>Nota de entrega</option>
         </select>
         @if($esModuloNotas ?? false)<input type="hidden" name="tipo_documento" value="nota_entrega">@endif
+        @if($facturaStockPendiente)<input type="hidden" name="tipo_documento" value="factura"><input type="hidden" name="factura_stock_pendiente" value="1">@endif
     </div>
     <div class="field"><label>Fecha</label><input type="date" name="fecha" value="{{ old('fecha', now()->toDateString()) }}" required></div>
     <div class="field"><label id="etiqueta-documento">{{ $esNota ? 'Referencia de nota' : 'Factura' }}</label><input name="factura" value="{{ old('factura') }}"></div>
@@ -106,15 +108,18 @@
     <div class="field"><label>Otros costos</label><input id="otros-costos-producto" type="number" step="0.01" min="0" value="0"></div>
 </div>
 
-<section id="entrega-sin-stock" class="card" style="margin:0 0 16px;" hidden>
-    <strong>Entrega sin stock</strong>
+<section id="entrega-sin-stock" class="card" style="margin:0 0 16px;" @if(!$facturaStockPendiente)hidden @endif>
+    <strong>{{ $facturaStockPendiente ? 'Factura con stock pendiente' : 'Entrega sin stock' }}</strong>
+    @if($facturaStockPendiente)
+        <p class="muted" style="margin:6px 0 10px;">Se registrará la factura aunque falte existencia. Cuando se reponga el producto, el inventario podrá regularizarse sin cambiar el documento.</p>
+    @endif
     <p id="entrega-sin-stock-resumen" class="muted" style="margin:6px 0 10px;"></p>
     <label style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
-        <input id="permitir-salida-sin-stock" type="checkbox" name="permitir_salida_sin_stock" value="1" @checked(old('permitir_salida_sin_stock'))>
-        Registrar esta nota aunque el inventario quede negativo
+        <input id="permitir-salida-sin-stock" type="checkbox" name="permitir_salida_sin_stock" value="1" @checked($facturaStockPendiente || old('permitir_salida_sin_stock')) @required($facturaStockPendiente)>
+        {{ $facturaStockPendiente ? 'Confirmo registrar esta factura con stock pendiente' : 'Registrar esta nota aunque el inventario quede negativo' }}
     </label>
     <div id="motivo-salida-sin-stock-field" class="field" hidden>
-        <label for="motivo-salida-sin-stock">Motivo de la entrega sin stock</label>
+        <label for="motivo-salida-sin-stock">{{ $facturaStockPendiente ? 'Motivo del stock pendiente' : 'Motivo de la entrega sin stock' }}</label>
         <textarea id="motivo-salida-sin-stock" name="motivo_salida_sin_stock" rows="2" maxlength="1000">{{ old('motivo_salida_sin_stock') }}</textarea>
     </div>
 </section>
@@ -372,10 +377,12 @@ function updateDeliveryWithoutStock() {
         return { product, shortage: quantity - available };
     }).filter(item => item.shortage > 0.0001);
 
-    const needsException = documentType === 'nota_entrega' && shortages.length > 0;
+    const facturaStockPendiente = @json($facturaStockPendiente);
+    const needsException = facturaStockPendiente || (documentType === 'nota_entrega' && shortages.length > 0);
     section.hidden = !needsException;
     checkbox.disabled = !needsException;
     if (!needsException) checkbox.checked = false;
+    if (facturaStockPendiente) checkbox.checked = true;
     reason.disabled = !needsException || !checkbox.checked;
     reason.required = needsException && checkbox.checked;
     reasonField.hidden = !checkbox.checked;

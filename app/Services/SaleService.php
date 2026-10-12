@@ -25,13 +25,17 @@ class SaleService
 
         return DB::transaction(function () use ($data, $items, $usuarioId) {
             $esNotaEntrega = ($data['tipo_documento'] ?? 'factura') === 'nota_entrega';
-            $permitirSalidaSinStock = $esNotaEntrega && (bool) ($data['permitir_salida_sin_stock'] ?? false);
+            $esFacturaStockPendiente = ! $esNotaEntrega
+                && ($data['tipo_documento'] ?? 'factura') === 'factura'
+                && (bool) ($data['factura_stock_pendiente'] ?? false);
+            $permitirSalidaSinStock = ($esNotaEntrega || $esFacturaStockPendiente)
+                && (bool) ($data['permitir_salida_sin_stock'] ?? false);
             $motivoSalidaSinStock = trim((string) ($data['motivo_salida_sin_stock'] ?? ''));
-            if (! $esNotaEntrega && $permitirSalidaSinStock) {
-                throw new InvalidArgumentException('La entrega sin stock solo está disponible para notas de entrega.');
+            if ($esFacturaStockPendiente && ! $permitirSalidaSinStock) {
+                throw new InvalidArgumentException('Confirme que la factura se registrará con stock pendiente.');
             }
             if ($permitirSalidaSinStock && $motivoSalidaSinStock === '') {
-                throw new InvalidArgumentException('Indique el motivo de la entrega sin stock.');
+                throw new InvalidArgumentException('Indique el motivo del stock pendiente.');
             }
             if (($data['plan_pago'] ?? 'contado') === 'cuotas' && ! Schema::hasTable('venta_cuotas')) {
                 throw new InvalidArgumentException('La actualización de la base de datos está pendiente. No se puede registrar una venta en cuotas todavía.');
@@ -141,7 +145,9 @@ class SaleService
                     'venta',
                     $venta->id,
                     $usuarioId,
-                    $permitirSalidaSinStock ? 'Salida por nota de entrega sin stock: ' . $motivoSalidaSinStock : 'Salida por venta',
+                    $permitirSalidaSinStock
+                        ? ($esFacturaStockPendiente ? 'Salida por factura con stock pendiente: ' : 'Salida por nota de entrega sin stock: ') . $motivoSalidaSinStock
+                        : 'Salida por venta',
                     null,
                     $permitirSalidaSinStock
                 );
