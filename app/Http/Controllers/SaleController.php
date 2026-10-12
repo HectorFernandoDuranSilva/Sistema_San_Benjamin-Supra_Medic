@@ -222,6 +222,50 @@ class SaleController extends Controller
         return back()->with('ok', $venta->tipo_documento === 'nota_entrega' ? 'Nota de entrega anulada y stock devuelto.' : 'Venta anulada y stock devuelto.');
     }
 
+    public function convertirAFactura(Request $request, Venta $venta)
+    {
+        abort_unless($request->user()?->isAdmin(), 403);
+        $data = $request->validate([
+            'totp_code' => ['required', 'string', 'max:32'],
+            'factura' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'ventas', $venta, 'Intento de convertir nota de entrega en factura')) {
+            return back()->withErrors(['totp_code' => $error]);
+        }
+
+        try {
+            DB::transaction(function () use ($request, $venta, $data): void {
+                $venta = Venta::whereKey($venta->id)->lockForUpdate()->firstOrFail();
+                if ($venta->tipo_documento !== 'nota_entrega') {
+                    throw new InvalidArgumentException('Solo las notas de entrega pueden convertirse en factura.');
+                }
+                if ($venta->estado !== 'registrada') {
+                    throw new InvalidArgumentException('Solo se pueden convertir notas de entrega registradas.');
+                }
+
+                $before = $venta->only(['tipo_documento', 'factura']);
+                $venta->update([
+                    'tipo_documento' => 'factura',
+                    'factura' => trim((string) ($data['factura'] ?? '')) ?: $venta->factura,
+                ]);
+                app(AuditLogService::class)->record(
+                    $request,
+                    'convirtio_a_factura',
+                    'ventas',
+                    $venta,
+                    $before,
+                    $venta->only(['tipo_documento', 'factura']),
+                    'Conversión de nota de entrega a factura sin duplicar inventario ni movimientos.'
+                );
+            });
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['venta' => $e->getMessage()]);
+        }
+
+        return redirect()->route('ventas.show', $venta)->with('ok', 'Nota de entrega convertida en factura sin duplicar el movimiento de inventario.');
+    }
+
     public function destroy(Request $request, Venta $venta, SaleService $service)
     {
         $request->validate(['totp_code' => ['required', 'string', 'max:32']]);

@@ -7,6 +7,17 @@
         @if($venta->tipo_documento === 'nota_entrega' && auth()->user()->hasPermission('reportes'))
             <a class="btn secondary" href="{{ route('reportes.documentos') }}#notas-entrega">Notas/Facturas</a>
         @endif
+        @if($venta->tipo_documento === 'nota_entrega' && $venta->estado === 'registrada' && auth()->user()->isAdmin())
+            <details>
+                <summary class="btn secondary">Convertir a factura</summary>
+                <form method="post" action="{{ route('ventas.convertir-factura', $venta) }}" class="card" style="margin-top:8px;min-width:280px;" data-glass-confirm="La nota pasará a factura sin repetir el movimiento de inventario. ¿Desea continuar?">
+                    @csrf
+                    <div class="field"><label>Número de factura (opcional)</label><input name="factura" value="{{ old('factura', $venta->factura) }}" maxlength="255"></div>
+                    <div class="field"><label>Código de Google Authenticator</label><input name="totp_code" inputmode="numeric" autocomplete="one-time-code" maxlength="32" required></div>
+                    <button class="btn">Confirmar conversión</button>
+                </form>
+            </details>
+        @endif
         <a class="btn secondary" href="{{ route('ventas.recibo', $venta) }}">Vista recibo</a>
         <a class="btn secondary" href="{{ route('ventas.pdf', $venta) }}">PDF</a>
         <a class="btn secondary" href="{{ route('ventas.historial.edit', $venta) }}">Editar cabecera</a>
