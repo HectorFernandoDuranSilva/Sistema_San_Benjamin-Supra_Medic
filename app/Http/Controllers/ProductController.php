@@ -12,6 +12,9 @@ use App\Services\ProductPricingService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ProductController extends Controller
 {
@@ -26,15 +29,11 @@ class ProductController extends Controller
     {
         $q = $request->string('q');
         $estado = $request->string('estado', 'activos')->toString();
+        $stockEstado = $request->string('stock', 'todos')->toString();
         $tipoCambioActual = TipoCambio::where('estado', 'vigente')->latest('fecha')->latest('id')->first();
         $tipoCambioValor = $tipoCambioActual ? (float) $tipoCambioActual->valor : TipoCambio::ultimoValor();
-        $productos = Producto::with('categoria')
-            ->when($q->isNotEmpty(), fn ($query) => $query->where(function ($query) use ($q) {
-                $query->where('codigo', 'like', "%{$q}%")->orWhere('nombre', 'like', "%{$q}%");
-            }))
-            ->when($estado === 'activos', fn ($query) => $query->where('activo', true))
-            ->when($estado === 'inactivos', fn ($query) => $query->where('activo', false))
-            ->orderBy('nombre')
+        $query = $this->productQuery($request, $q, $estado, $stockEstado);
+        $productos = $query
             ->paginate(20)
             ->withQueryString();
 
@@ -43,7 +42,82 @@ class ProductController extends Controller
             $producto->setAttribute('precio_sugerido_reposicion', $this->pricing->suggestedReplacementPrice($producto, $tipoCambioValor));
         });
 
-        return view('productos.index', compact('productos', 'estado', 'tipoCambioActual', 'tipoCambioValor'));
+        $categorias = Categoria::where('activo', true)->orderBy('nombre')->get();
+
+        return view('productos.index', compact('productos', 'categorias', 'estado', 'stockEstado', 'tipoCambioActual', 'tipoCambioValor'));
+    }
+
+    public function exportStock(Request $request)
+    {
+        $q = $request->string('q');
+        $estado = $request->string('estado', 'activos')->toString();
+        $stockEstado = $request->string('stock', 'todos')->toString();
+        $productos = $this->productQuery($request, $q, $estado, $stockEstado)->get();
+        $productos->load('categoria');
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Stock');
+        $sheet->setCellValue('A1', 'Listado de stock');
+        $sheet->setCellValue('A2', 'Filtros');
+        $sheet->setCellValue('B2', 'Categoría: '.($request->filled('categoria_id') ? ($productos->first()?->categoria?->nombre ?? 'Seleccionada') : 'Todas').
+            ' | Stock: '.match ($stockEstado) { 'con_stock' => 'Con stock', 'sin_stock' => 'Sin stock (0 o negativo)', default => 'Todos' });
+        $sheet->getStyle('A1:B1')->getFont()->setBold(true)->setSize(14);
+        $sheet->getStyle('A2:B2')->getFont()->setItalic(true);
+
+        $groups = $productos->groupBy(fn (Producto $producto) => $producto->categoria?->nombre ?: 'Sin categoría')->values();
+        if ($groups->isEmpty()) {
+            $groups = collect([collect()]);
+        }
+
+        foreach ($groups->chunk(2) as $rowGroup) {
+            $startRow = $sheet->getHighestRow() + 2;
+            foreach ($rowGroup->values() as $position => $items) {
+                $startColumn = $position === 0 ? 1 : 4;
+                $categoryName = $items->first()?->categoria?->nombre ?: 'Sin categoría';
+                $productColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($startColumn);
+                $stockColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($startColumn + 1);
+                $sheet->setCellValue($productColumn.$startRow, mb_strtoupper($categoryName));
+                $sheet->setCellValue($stockColumn.$startRow, 'EXISTENCIAS');
+                $sheet->getStyle($productColumn.$startRow.':'.$stockColumn.$startRow)->getFont()->setBold(true);
+                $sheet->getStyle($productColumn.$startRow.':'.$stockColumn.$startRow)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('D9EAD3');
+
+                foreach ($items as $offset => $producto) {
+                    $row = $startRow + $offset + 1;
+                    $sheet->setCellValue($productColumn.$row, $producto->nombre);
+                    $sheet->setCellValue($stockColumn.$row, (float) $producto->stock_actual);
+                    $sheet->getStyle($stockColumn.$row)->getNumberFormat()->setFormatCode('0.00');
+                }
+
+                $sheet->getColumnDimension($productColumn)->setWidth(48);
+                $sheet->getColumnDimension($stockColumn)->setWidth(14);
+            }
+        }
+
+        $sheet->freezePane('A4');
+        $sheet->getDefaultRowDimension()->setRowHeight(18);
+
+        return response()->streamDownload(function () use ($spreadsheet): void {
+            (new Xlsx($spreadsheet))->save('php://output');
+        }, 'stock-productos.xlsx', [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    private function productQuery(Request $request, $q, string $estado, string $stockEstado)
+    {
+        $latestStock = '(select stock_nuevo from movimientos_inventario as stock_movimientos where stock_movimientos.producto_id = productos.id order by stock_movimientos.fecha_movimiento desc, stock_movimientos.id desc limit 1)';
+
+        return Producto::with('categoria')
+            ->when($q->isNotEmpty(), fn ($query) => $query->where(function ($query) use ($q) {
+                $query->where('codigo', 'like', "%{$q}%")->orWhere('nombre', 'like', "%{$q}%");
+            }))
+            ->when($request->filled('categoria_id'), fn ($query) => $query->where('categoria_id', $request->integer('categoria_id')))
+            ->when($estado === 'activos', fn ($query) => $query->where('activo', true))
+            ->when($estado === 'inactivos', fn ($query) => $query->where('activo', false))
+            ->when($stockEstado === 'con_stock', fn ($query) => $query->whereRaw("coalesce({$latestStock}, 0) > 0"))
+            ->when($stockEstado === 'sin_stock', fn ($query) => $query->whereRaw("coalesce({$latestStock}, 0) <= 0"))
+            ->orderBy('nombre');
     }
 
     public function create()

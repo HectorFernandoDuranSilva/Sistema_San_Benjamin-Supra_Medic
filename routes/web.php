@@ -55,6 +55,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/dashboard', DashboardController::class)->middleware('permission:dashboard')->name('dashboard');
 
+    Route::get('/productos/exportar-stock', [ProductController::class, 'exportStock'])->middleware('permission:productos')->name('productos.exportar-stock');
     Route::delete('/productos/{producto}/forzar', [ProductController::class, 'forceDestroy'])->middleware('permission:productos')->name('productos.force-destroy');
     Route::resource('productos', ProductController::class)->except(['show'])->middleware('permission:productos');
     Route::post('/productos/{producto}/aprobar-precio', [ProductController::class, 'approvePrice'])->middleware('permission:productos')->name('productos.precio.aprobar');
