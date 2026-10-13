@@ -83,6 +83,35 @@ class TwoFactorAuthenticationService
         return $result['message'];
     }
 
+    public function authorizeAnyUser(Request $request, string $module, ?Model $subject = null, string $description = 'Acción protegida'): ?string
+    {
+        $user = $request->user();
+        if (! $user) {
+            return 'Debe iniciar sesión para realizar esta acción.';
+        }
+
+        $authenticatorOwner = User::where('role', 'administrador')
+            ->where('activo', true)
+            ->whereNotNull('two_factor_confirmed_at')
+            ->whereNotNull('two_factor_secret')
+            ->orderBy('id')
+            ->first();
+        if (! $authenticatorOwner) {
+            return 'El Authenticator compartido todavía no está configurado por un administrador.';
+        }
+
+        // Editing headers uses one shared administrator authenticator. The
+        // audit entry still records the user who requested the change.
+        $result = $this->verify($authenticatorOwner, (string) $request->input('totp_code'));
+        if ($result['valid']) {
+            return null;
+        }
+
+        $this->auditLog->record($request, 'rechazo_autenticador', $module, $subject, null, null, $description.': '.$result['message']);
+
+        return $result['message'];
+    }
+
     /** @return array{valid: bool, message: string, recovery: bool} */
     public function verify(User $user, string $submittedCode): array
     {

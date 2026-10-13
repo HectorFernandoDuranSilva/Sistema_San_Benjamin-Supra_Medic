@@ -172,7 +172,7 @@ class SaleController extends Controller
             'observacion' => ['nullable', 'string'],
         ]);
 
-        if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'ventas', $venta, 'Intento de editar historial de venta')) {
+        if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorizeAnyUser($request, 'ventas', $venta, 'Intento de editar historial de venta')) {
             return back()->withErrors(['totp_code' => $error])->withInput();
         }
 

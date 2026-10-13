@@ -20,7 +20,7 @@
         @endif
         <a class="btn secondary" href="{{ route('ventas.recibo', $venta) }}">Vista recibo</a>
         <a class="btn secondary" href="{{ route('ventas.pdf', $venta) }}">PDF</a>
-        @if(auth()->user()->isAdmin())
+        @if(auth()->user()->hasPermission('ventas'))
             <a class="btn secondary" href="{{ route('ventas.historial.edit', $venta) }}">Editar cabecera</a>
         @endif
         @if($venta->estado !== 'anulada')

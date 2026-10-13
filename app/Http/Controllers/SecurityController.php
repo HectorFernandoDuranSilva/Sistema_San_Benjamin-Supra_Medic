@@ -141,4 +141,5 @@ class SecurityController extends Controller
 
         return $user;
     }
+
 }

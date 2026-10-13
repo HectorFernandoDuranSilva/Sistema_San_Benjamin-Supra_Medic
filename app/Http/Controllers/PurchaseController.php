@@ -165,7 +165,7 @@ class PurchaseController extends Controller
             'observacion' => ['nullable', 'string'],
         ]);
 
-        if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'compras', $compra, 'Intento de editar historial de compra')) {
+        if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorizeAnyUser($request, 'compras', $compra, 'Intento de editar historial de compra')) {
             return back()->withErrors(['totp_code' => $error])->withInput();
         }
 
