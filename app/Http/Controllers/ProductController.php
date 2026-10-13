@@ -334,7 +334,6 @@ class ProductController extends Controller
 
     public function destroy(Request $request, Producto $producto)
     {
-        abort_unless($request->user()?->isAdmin(), 403);
         $request->validate(['totp_code' => ['required', 'string', 'max:32']]);
         if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'productos', $producto, 'Intento de eliminar producto')) {
             return $this->redirectAfterDeletion($request)->withErrors(['totp_code' => $error]);

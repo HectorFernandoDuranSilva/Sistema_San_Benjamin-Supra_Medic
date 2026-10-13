@@ -55,8 +55,6 @@ class InventoryBatchController extends Controller
 
     public function update(Request $request, InventarioLote $lote)
     {
-        abort_unless($request->user()?->isAdmin(), 403);
-
         $cantidadConsumida = (float) $lote->consumos()->sum('cantidad');
         $maxDisponible = max(0, round((float) $lote->cantidad_inicial - $cantidadConsumida, 2));
 
@@ -98,8 +96,6 @@ class InventoryBatchController extends Controller
 
     public function destroy(Request $request, InventarioLote $lote)
     {
-        abort_unless($request->user()?->isAdmin(), 403);
-
         $request->validate(['totp_code' => ['required', 'string', 'max:32']]);
         if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'lotes', $lote, 'Intento de retirar lote')) {
             return back()->withErrors(['totp_code' => $error]);

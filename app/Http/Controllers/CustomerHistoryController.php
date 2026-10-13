@@ -143,7 +143,6 @@ class CustomerHistoryController extends Controller
 
     public function cancelPayment(Request $request, Cobro $cobro, AuditLogService $audit)
     {
-        abort_unless($request->user()?->isAdmin(), 403);
         $data = $request->validate(['totp_code' => ['required', 'string', 'max:32'], 'motivo' => ['required', 'string', 'max:255']]);
         if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'ventas', $cobro, 'Intento de anular cobro')) {
             return back()->withErrors(['totp_code' => $error]);

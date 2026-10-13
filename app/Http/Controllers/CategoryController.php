@@ -37,7 +37,6 @@ class CategoryController extends Controller
 
     public function destroy(Request $request, Categoria $categoria)
     {
-        abort_unless($request->user()?->isAdmin(), 403);
         $request->validate(['totp_code' => ['required', 'string', 'max:32']]);
         if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'categorias', $categoria, 'Intento de eliminar categoría')) {
             return back()->withErrors(['totp_code' => $error]);

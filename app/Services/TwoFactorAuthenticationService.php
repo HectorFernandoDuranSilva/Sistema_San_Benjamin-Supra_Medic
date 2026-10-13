@@ -64,7 +64,14 @@ class TwoFactorAuthenticationService
     public function authorize(Request $request, string $module, ?Model $subject = null, string $description = 'Acción protegida'): ?string
     {
         $user = $request->user();
-        abort_unless($user?->isAdmin(), 403);
+        if (! $user?->isAdmin()) {
+            $message = 'Esta acción requiere una cuenta administradora.';
+            if ($user) {
+                $this->auditLog->record($request, 'rechazo_autorizacion', $module, $subject, null, null, $description.': '.$message);
+            }
+
+            return $message;
+        }
 
         $result = $this->verify($user, (string) $request->input('totp_code'));
         if ($result['valid']) {

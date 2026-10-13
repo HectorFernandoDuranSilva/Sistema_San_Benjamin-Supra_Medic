@@ -20,7 +20,9 @@
         @endif
         <a class="btn secondary" href="{{ route('ventas.recibo', $venta) }}">Vista recibo</a>
         <a class="btn secondary" href="{{ route('ventas.pdf', $venta) }}">PDF</a>
-        <a class="btn secondary" href="{{ route('ventas.historial.edit', $venta) }}">Editar cabecera</a>
+        @if(auth()->user()->isAdmin())
+            <a class="btn secondary" href="{{ route('ventas.historial.edit', $venta) }}">Editar cabecera</a>
+        @endif
         @if($venta->estado !== 'anulada')
             <form method="post" action="{{ route('ventas.anular', $venta) }}" data-glass-confirm="¿Anular este documento y devolver el stock?">@csrf<button class="btn danger">Anular</button></form>
         @endif

@@ -82,7 +82,6 @@ class UserManagementController extends Controller
 
     public function destroy(Request $request, User $usuario)
     {
-        abort_unless($request->user()?->isAdmin(), 403);
         $request->validate(['totp_code' => ['required', 'string', 'max:32']]);
         if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'usuarios', $usuario, 'Intento de desactivar usuario')) {
             return back()->withErrors(['totp_code' => $error]);

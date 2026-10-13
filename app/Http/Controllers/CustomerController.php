@@ -36,7 +36,6 @@ class CustomerController extends Controller
 
     public function destroy(Request $request, Cliente $cliente)
     {
-        abort_unless($request->user()?->isAdmin(), 403);
         $request->validate(['totp_code' => ['required', 'string', 'max:32']]);
         if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'clientes', $cliente, 'Intento de eliminar cliente')) {
             return back()->withErrors(['totp_code' => $error]);

@@ -160,8 +160,6 @@ class SaleController extends Controller
 
     public function updateHistory(Request $request, Venta $venta)
     {
-        abort_unless($request->user()?->isAdmin(), 403);
-
         $data = $request->validate([
             'totp_code' => ['required', 'string', 'max:32'],
             'nombre_comercial' => ['nullable', 'string', 'max:255'],
@@ -220,7 +218,6 @@ class SaleController extends Controller
 
     public function convertirAFactura(Request $request, Venta $venta)
     {
-        abort_unless($request->user()?->isAdmin(), 403);
         $data = $request->validate([
             'totp_code' => ['required', 'string', 'max:32'],
             'factura' => ['nullable', 'string', 'max:255'],
