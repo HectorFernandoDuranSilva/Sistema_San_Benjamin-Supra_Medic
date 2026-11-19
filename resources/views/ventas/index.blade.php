@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="top"><h1>Ventas</h1><div class="actions"><a class="btn" href="{{ route('ventas.create') }}">Nueva venta</a><a class="btn secondary" href="{{ route('ventas.create', ['stock_pendiente' => 1]) }}">Nueva factura con stock pendiente</a></div></div>
+<div class="top"><h1>Ventas</h1><div class="actions"><a class="btn" href="{{ route('ventas.create') }}">Nueva venta</a></div></div>
 <form class="card" method="get" style="margin-bottom:12px;">
     <div class="row">
         <div class="field"><label>Buscar</label><input name="buscar" value="{{ $filters['buscar'] ?? '' }}" placeholder="N.º de venta, factura, NIT o cliente"></div>

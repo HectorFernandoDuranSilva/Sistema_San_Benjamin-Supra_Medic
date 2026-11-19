@@ -1,4 +1,4 @@
-<section style="margin-top:24px;">
+<section class="card" style="margin-top:24px;">
 @php($payments = $compra->pagos->sortBy(['fecha', 'id']))
 @php($paid = $payments->where('estado', 'registrado')->sum('importe'))
 @php($installments = $compra->cuotas ?? collect())

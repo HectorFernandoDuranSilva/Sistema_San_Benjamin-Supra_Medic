@@ -10,6 +10,7 @@
         'procedencia' => $p->procedencia,
         'cost' => $p->costo_referencial,
         'margin' => $p->porcentaje_utilidad,
+        'maneja_lote_universal' => (bool) $p->maneja_lote_universal,
     ])->values();
 @endphp
 <div class="top"><h1>Registro de compras</h1></div>
@@ -61,8 +62,8 @@
         </select>
     </div>
     <div class="field"><label>Comentario</label><input name="observacion" value="{{ old('observacion') }}"></div>
-    <div class="field"><label>Utilidad %</label><input id="porcentaje-utilidad" type="number" step="0.01" min="25" max="30" value="27"></div>
-    <div class="field"><label>Descuento proveedor %</label><input id="descuento-producto" type="number" step="0.01" min="0" max="100" value="0"></div>
+    <div class="field"><label>Utilidad para precio sugerido %</label><input id="porcentaje-utilidad" type="number" step="0.01" min="25" max="30" value="27"><small class="muted">No es el descuento del proveedor.</small></div>
+    <div class="field"><label>Descuento proveedor Bs</label><input id="descuento-fijo-producto" type="number" step="0.01" min="0" value="0"></div>
 </div>
 
 <div class="row">
@@ -81,10 +82,12 @@
     </div>
     <div class="field"><label>Marca</label><input id="marca-producto" readonly></div>
     <div class="field"><label>Procedencia</label><input id="procedencia-producto" readonly></div>
-    <div class="field"><label>Costo Unit</label><input id="costo-producto" type="number" step="0.01" min="0" value="0"></div>
-    <div class="field"><label>Cantidad</label><input id="cantidad-producto" type="number" step="0.01" min="0.01" value="1"></div>
+    <div class="field"><label>Costo Unit</label><input id="costo-producto" type="number" step="0.01" min="0" value="0"><small class="muted">Use 0.00 si fue recibido como regalo o sin costo.</small></div>
+        <div class="field"><label>Cantidad recibida</label><input id="cantidad-producto" type="number" step="0.01" min="0" value="1"><small class="muted">Puede ser parcial o 0 si solo desea documentar el producto aún no recibido.</small></div>
+    <div class="field"><label>Control de lote</label><select id="tipo-lote-producto"><option value="con_lote">Lote con vencimiento</option><option value="sin_vencimiento">Lote sin vencimiento</option><option value="sin_lote">Producto sin lote</option></select><small class="muted">Para papeles y productos no perecederos use “Producto sin lote”.</small></div>
     <div class="field"><label>Lote</label><input id="lote-producto" maxlength="255" placeholder="Número de lote"></div>
     <div class="field"><label>Vencimiento</label><input id="vencimiento-producto" type="date"></div>
+    <div id="lote-universal-aviso" class="notice" hidden>Este producto usa un lote universal. Cada compra acumulará el saldo en el mismo lote y no tendrá vencimiento.</div>
     <div class="field"><label>Precio sugerido</label><input id="precio-sugerido-producto" readonly value="0.00"></div>
 </div>
 
@@ -97,13 +100,13 @@
     <table id="items">
         <thead>
             <tr>
-                <th>Código</th><th>Producto</th><th>Marca</th><th>Procedencia</th><th>Cantidad</th><th>Costo Unit</th><th>Utilidad %</th><th>Desc. %</th><th>Lote</th><th>Vencimiento</th><th>Subtotal</th><th>Descuento</th><th>Impuesto</th><th>Total</th><th></th>
+                <th>Código</th><th>Producto</th><th>Marca</th><th>Procedencia</th><th>Cantidad</th><th>Costo Unit</th><th>Utilidad precio sugerido %</th><th>Descuento proveedor Bs</th><th>Control de lote</th><th>Lote</th><th>Vencimiento</th><th>Subtotal</th><th>Descuento</th><th>Impuesto</th><th>Total</th><th></th>
             </tr>
         </thead>
         <tbody></tbody>
         <tfoot>
             <tr>
-                <th colspan="10" style="text-align:right;">Totales</th>
+                <th colspan="11" style="text-align:right;">Totales</th>
                 <th id="total-subtotal">0.00</th>
                 <th id="total-descuento">0.00</th>
                 <th id="total-impuesto">0.00</th>
@@ -113,6 +116,7 @@
         </tfoot>
     </table>
 </div>
+
 </form>
 
 <div id="compra-items-alert" class="glass-modal-backdrop" role="dialog" aria-modal="true">
@@ -155,6 +159,21 @@ function refreshSelectedProduct() {
     document.getElementById('procedencia-producto').value = product.procedencia || '-';
     document.getElementById('costo-producto').value = money(product.cost);
     document.getElementById('porcentaje-utilidad').value = money(product.margin || 27);
+    const loteUniversal = Boolean(product.maneja_lote_universal);
+    const controlLote = document.getElementById('tipo-lote-producto');
+    const loteInput = document.getElementById('lote-producto');
+    const vencimientoInput = document.getElementById('vencimiento-producto');
+    controlLote.value = loteUniversal ? 'sin_vencimiento' : controlLote.value;
+    controlLote.disabled = loteUniversal;
+    loteInput.disabled = loteUniversal;
+    vencimientoInput.disabled = loteUniversal;
+    if (loteUniversal) {
+        loteInput.value = 'UNIVERSAL';
+        vencimientoInput.value = '';
+    } else if (loteInput.value === 'UNIVERSAL') {
+        loteInput.value = '';
+    }
+    document.getElementById('lote-universal-aviso').hidden = !loteUniversal;
     updateSuggestedPrice();
 }
 
@@ -210,21 +229,26 @@ function addSelectedItem() {
     const cantidad = parseFloat(document.getElementById('cantidad-producto').value || '1');
     const costo = parseFloat(document.getElementById('costo-producto').value || product.cost || '0');
     const porcentaje = parseFloat(document.getElementById('porcentaje-utilidad').value || product.margin || '27');
-    const descuento = parseFloat(document.getElementById('descuento-producto').value || '0');
+    const descuentoFijo = parseFloat(document.getElementById('descuento-fijo-producto').value || '0');
+    const tipoLote = document.getElementById('tipo-lote-producto').value || 'con_lote';
     const lote = document.getElementById('lote-producto').value || '';
-    const vencimiento = normalizeDateValue(document.getElementById('vencimiento-producto').value || '');
+    const vencimiento = tipoLote === 'con_lote'
+        ? normalizeDateValue(document.getElementById('vencimiento-producto').value || '')
+        : '';
+    const loteValue = tipoLote === 'sin_lote' ? '' : lote;
 
     tr.innerHTML = `
         <td>${product.codigo}<input type="hidden" name="items[${idx}][producto_id]" value="${product.id}"></td>
         <td>${product.nombre}</td>
         <td>${product.marca || '-'}</td>
         <td>${product.procedencia || '-'}</td>
-        <td><input class="item-cantidad" type="number" step="0.01" min="0.01" name="items[${idx}][cantidad]" value="${money(cantidad)}"></td>
+        <td><input class="item-cantidad" type="number" step="0.01" min="0" name="items[${idx}][cantidad]" value="${money(cantidad)}"></td>
         <td><input class="item-costo" type="number" step="0.01" min="0" name="items[${idx}][costo_unitario]" value="${money(costo)}"></td>
         <td><input class="item-porcentaje" type="number" step="0.01" min="25" max="30" name="items[${idx}][porcentaje_utilidad]" value="${money(porcentaje)}"></td>
-        <td><input class="item-descuento-porcentaje" type="number" step="0.01" min="0" max="100" name="items[${idx}][descuento_porcentaje]" value="${money(descuento)}"></td>
-        <td><input class="item-lote" name="items[${idx}][codigo_lote]" value="${lote.replace(/"/g, '&quot;')}"></td>
-        <td><input class="item-vencimiento" type="date" name="items[${idx}][fecha_vencimiento]" value="${vencimiento}"></td>
+        <td><input class="item-descuento-fijo" type="number" step="0.01" min="0" name="items[${idx}][descuento_fijo]" value="${money(descuentoFijo)}"></td>
+        <td><select class="item-tipo-lote" name="items[${idx}][tipo_lote]"><option value="con_lote" ${tipoLote === 'con_lote' ? 'selected' : ''}>Con vencimiento</option><option value="sin_vencimiento" ${tipoLote === 'sin_vencimiento' ? 'selected' : ''}>Sin vencimiento</option><option value="sin_lote" ${tipoLote === 'sin_lote' ? 'selected' : ''}>Sin lote</option></select></td>
+        <td><input class="item-lote" name="items[${idx}][codigo_lote]" value="${loteValue.replace(/"/g, '&quot;')}" ${tipoLote === 'sin_lote' ? 'disabled' : ''}></td>
+        <td><input class="item-vencimiento" type="date" name="items[${idx}][fecha_vencimiento]" value="${vencimiento}" ${tipoLote !== 'con_lote' ? 'disabled' : ''}></td>
         <td class="item-subtotal">0.00</td>
         <td class="item-descuento">0.00</td>
         <td><input class="item-impuesto" type="number" step="0.01" min="0" name="items[${idx}][impuesto]" value="0.00"></td>
@@ -234,11 +258,32 @@ function addSelectedItem() {
 
     tbody.appendChild(tr);
     tr.querySelectorAll('input').forEach(input => input.addEventListener('input', () => updateRow(tr)));
+    tr.querySelector('.item-tipo-lote').addEventListener('change', function () {
+        const sinLote = this.value === 'sin_lote';
+        const conVencimiento = this.value === 'con_lote';
+        const loteInput = tr.querySelector('.item-lote');
+        const vencimientoInput = tr.querySelector('.item-vencimiento');
+        loteInput.disabled = sinLote;
+        vencimientoInput.disabled = !conVencimiento;
+        if (sinLote) loteInput.value = '';
+        if (!conVencimiento) vencimientoInput.value = '';
+    });
     updateRow(tr);
     idx++;
     document.getElementById('lote-producto').value = '';
     document.getElementById('vencimiento-producto').value = '';
 }
+
+document.getElementById('tipo-lote-producto').addEventListener('change', function () {
+    const sinLote = this.value === 'sin_lote';
+    const conVencimiento = this.value === 'con_lote';
+    const loteInput = document.getElementById('lote-producto');
+    const vencimientoInput = document.getElementById('vencimiento-producto');
+    loteInput.disabled = sinLote;
+    vencimientoInput.disabled = !conVencimiento;
+    if (sinLote) loteInput.value = '';
+    if (!conVencimiento) vencimientoInput.value = '';
+});
 
 function normalizeDateValue(value) {
     const trimmed = String(value || '').trim();
@@ -254,10 +299,10 @@ function normalizeDateValue(value) {
 function updateRow(tr) {
     const cantidad = parseFloat(tr.querySelector('.item-cantidad').value || '0');
     const costo = parseFloat(tr.querySelector('.item-costo').value || '0');
-    const descuentoPorcentaje = parseFloat(tr.querySelector('.item-descuento-porcentaje').value || '0');
+    const descuentoFijo = parseFloat(tr.querySelector('.item-descuento-fijo').value || '0');
     const impuesto = parseFloat(tr.querySelector('.item-impuesto').value || '0');
     const subtotal = cantidad * costo;
-    const descuento = subtotal * (descuentoPorcentaje / 100);
+    const descuento = Math.min(subtotal, descuentoFijo);
     const total = subtotal - descuento + impuesto;
 
     tr.querySelector('.item-subtotal').textContent = money(subtotal);

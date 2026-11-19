@@ -37,7 +37,7 @@
             @if($dashboardOpciones['ventas_hoy'])<div class="metric"><span>Ventas del dia</span><strong>{{ $ventasHoy }}</strong></div>@endif
             @if($dashboardOpciones['total_vendido'])<div class="metric"><span>Total vendido</span><strong>Bs {{ number_format($totalHoy, 2) }}</strong></div>@endif
             @if($dashboardOpciones['stock_bajo'])<div class="metric"><span>Stock bajo</span><strong>{{ $productosBajoStock->count() }}</strong></div>@endif
-            @if($dashboardOpciones['stock_pendiente'])<div class="metric"><span>Faltantes por regularizar</span><strong>{{ $productosStockNegativo->count() }}</strong></div>@endif
+            @if($dashboardOpciones['stock_pendiente'])<div class="metric"><span>Documentos con stock pendiente</span><strong>{{ $documentosStockPendientes->count() }}</strong></div>@endif
             @if($dashboardOpciones['movimientos'])<div class="metric"><span>Movimientos</span><strong>{{ $ultimosMovimientos->count() }}</strong></div>@endif
             @if($dashboardOpciones['cuentas_cobrar'])<div class="metric"><span>Cuentas por cobrar</span><strong>Bs {{ number_format($cuentasPorCobrar['importe'], 2) }}</strong></div>@endif
         </div>
@@ -45,7 +45,7 @@
         <div class="dashboard-grid">
             @if($dashboardOpciones['movimiento_mensual'])
             @php
-                $movimientoBase = $movimientoMensual['ventas'] + $movimientoMensual['compras'];
+                $movimientoBase = $movimientoMensual['ventas'] + $movimientoMensual['compras'] + $movimientoMensual['gastos_operativos'];
                 $ventasProporcion = $movimientoBase > 0 ? round(($movimientoMensual['ventas'] / $movimientoBase) * 100, 1) : 0;
                 $comprasProporcion = $movimientoBase > 0 ? round(($movimientoMensual['compras'] / $movimientoBase) * 100, 1) : 0;
                 $resultadoEsPositivo = $movimientoMensual['resultado'] >= 0;
@@ -53,13 +53,13 @@
             <section class="panel monthly-summary">
                 <div class="monthly-summary-head">
                     <div>
-                        <span class="eyebrow">Resumen financiero del mes</span>
+                        <span class="eyebrow">Resumen financiero del mes · {{ $commercial['name'] }}</span>
                         <h2>Movimiento mensual</h2>
-                        <p class="muted">Comparación entre ventas y compras registradas en el período actual.</p>
+                        <p class="muted">Ventas, compras y gastos operativos del período actual.</p>
                     </div>
                     <span class="monthly-status {{ $resultadoEsPositivo ? 'is-positive' : 'is-negative' }}">
                         <strong>{{ $resultadoEsPositivo ? 'Ganancia' : 'Pérdida' }}</strong>
-                        <small>{{ $resultadoEsPositivo ? 'Las ventas superan a las compras' : 'Las compras superan a las ventas' }}</small>
+                        <small>{{ $resultadoEsPositivo ? 'Las ventas superan a compras y gastos' : 'Las compras y gastos superan a las ventas' }}</small>
                     </span>
                 </div>
                 <div class="monthly-kpis">
@@ -73,20 +73,25 @@
                         <strong>Bs {{ number_format($movimientoMensual['compras'], 2) }}</strong>
                         <small>{{ number_format($comprasProporcion, 1) }}% del movimiento</small>
                     </div>
+                    <div class="monthly-kpi purchases">
+                        <span>Gastos operativos</span>
+                        <strong>Bs {{ number_format($movimientoMensual['gastos_operativos'], 2) }}</strong>
+                        <small>Sin stock ni numeración de compra</small>
+                    </div>
                     <div class="monthly-kpi result {{ $resultadoEsPositivo ? 'is-positive' : 'is-negative' }}">
                         <span>Resultado comercial</span>
                         <strong>{{ $resultadoEsPositivo ? '+' : '-' }}Bs {{ number_format(abs($movimientoMensual['resultado']), 2) }}</strong>
-                        <small>Ventas - compras</small>
+                        <small>Ventas - compras - gastos</small>
                     </div>
                 </div>
-                <div class="monthly-comparison" aria-label="Comparación entre ventas y compras">
-                    <div class="monthly-comparison-labels"><span>Ventas</span><span>Compras</span></div>
+                <div class="monthly-comparison" aria-label="Comparación entre ventas, compras y gastos">
+                    <div class="monthly-comparison-labels"><span>Ventas</span><span>Compras y gastos</span></div>
                     <div class="monthly-bar">
                         <span class="monthly-bar-sales" style="width: {{ $ventasProporcion }}%"></span>
                         <span class="monthly-bar-purchases" style="width: {{ $comprasProporcion }}%"></span>
                     </div>
                     <p class="monthly-explanation">
-                        {{ $resultadoEsPositivo ? 'Las ventas superan a las compras' : 'Las compras superan a las ventas' }}
+                        {{ $resultadoEsPositivo ? 'Las ventas superan a compras y gastos' : 'Las compras y gastos superan a las ventas' }}
                         por <strong>Bs {{ number_format(abs($movimientoMensual['resultado']), 2) }}</strong>.
                     </p>
                 </div>
@@ -102,7 +107,7 @@
                                 <b>{{ ucfirst(str_replace('_', ' ', $movimiento->tipo_movimiento)) }}</b>
                                 <br><span class="muted">{{ $movimiento->producto?->nombre ?? 'Producto sin nombre' }} - {{ number_format($movimiento->cantidad, 2) }}</span>
                             </div>
-                            <span class="pill">{{ number_format($movimiento->stock_nuevo, 2) }}</span>
+                            <span class="pill" title="Saldo del producto despues del movimiento">Saldo {{ number_format($movimiento->stock_nuevo, 2) }}</span>
                         </div>
                     @empty
                         <div class="timeline-row"><span>-</span><div><b>Sin movimientos recientes</b><br><span class="muted">Las entradas, salidas y ajustes apareceran aqui.</span></div><span class="pill">Stock</span></div>
@@ -154,11 +159,19 @@
                             </div>
                         @endif
                     @empty
+                    @endforelse
+                    @foreach($documentosStockPendientes->take(5) as $venta)
+                        <div class="alert-item">
+                            <strong><span>{{ $venta->numero_venta }} · {{ $venta->tipo_documento === 'nota_entrega' ? 'Nota de entrega' : 'Factura' }}</span><span>{{ number_format((float) $venta->faltante_stock_total, 2) }}</span></strong>
+                            <small>Stock pendiente en {{ $venta->detalles->pluck('nombre_producto')->filter()->take(2)->join(', ') }}</small>
+                        </div>
+                    @endforeach
+                    @if($productosStockNegativo->isEmpty() && $documentosStockPendientes->isEmpty())
                         <div class="compact-item">
-                            <div><b>Sin faltantes pendientes</b><small>No existen productos con stock negativo.</small></div>
+                            <div><b>Sin faltantes pendientes</b><small>No existen productos ni documentos con stock faltante.</small></div>
                             <span class="pill">OK</span>
                         </div>
-                    @endforelse
+                    @endif
                 </div>
             </section>@endif
 
@@ -270,11 +283,11 @@
     </div>
 @endif
 
-@if($dashboardOpciones['faltantes_stock'] && $productosStockNegativo->isNotEmpty())
+@if($dashboardOpciones['faltantes_stock'] && ($productosStockNegativo->isNotEmpty() || $documentosStockPendientes->isNotEmpty()))
     <div class="glass-modal-backdrop is-open" role="dialog" aria-modal="true" data-dashboard-alert>
         <div class="glass-modal is-error">
             <h2>Faltantes de stock por regularizar</h2>
-            <p>Estos productos tienen existencias negativas. Registra la regularización desde la ficha de cada producto.</p>
+            <p>Se muestran existencias negativas y documentos que todavía tienen cantidades registradas como stock pendiente.</p>
             <div class="compact-list" style="margin-top:14px;">
                 @foreach($productosStockNegativo->take(8) as $producto)
                     @if(auth()->user()->hasPermission('productos'))
@@ -288,6 +301,12 @@
                             <small>Faltan {{ number_format(abs((float) $producto->stock_actual), 2) }} unidades</small>
                         </div>
                     @endif
+                @endforeach
+                @foreach($documentosStockPendientes->take(8) as $venta)
+                    <div class="alert-item">
+                        <strong><span>{{ $venta->numero_venta }} · stock pendiente</span><span>{{ number_format((float) $venta->faltante_stock_total, 2) }}</span></strong>
+                        <small>{{ $venta->detalles->pluck('nombre_producto')->filter()->take(2)->join(', ') }}</small>
+                    </div>
                 @endforeach
             </div>
             <div class="glass-modal-actions">

@@ -21,6 +21,7 @@ use App\Services\PurchaseService;
 use App\Services\QuotationService;
 use App\Services\SaleService;
 use App\Services\TwoFactorAuthenticationService;
+use App\Http\Controllers\SaleController;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Carbon;
@@ -1171,10 +1172,10 @@ class ExampleTest extends TestCase
 
         $this->actingAs($user)
             ->withSession(['commercial_context' => [
-                'key' => 'supra-medic',
-                'name' => 'Supra Medic',
+                'key' => 'san-benjamin',
+                'name' => 'San Benjamin',
                 'nit' => 'Pendiente de validacion',
-                'logo' => 'assets/logos/supra-medic.png',
+                'logo' => 'assets/logos/san-benjamin.jpeg',
             ]])
             ->post('/compras', [
                 'numero_compra' => 'C-HTTP-COMPRA',
@@ -1280,10 +1281,10 @@ class ExampleTest extends TestCase
 
         $this->actingAs($user)
             ->withSession(['commercial_context' => [
-                'key' => 'supra-medic',
-                'name' => 'Supra Medic',
+                'key' => 'san-benjamin',
+                'name' => 'San Benjamin',
                 'nit' => 'Pendiente de validacion',
-                'logo' => 'assets/logos/supra-medic.png',
+                'logo' => 'assets/logos/san-benjamin.jpeg',
             ]])
             ->post('/ventas', [
                 'numero_venta' => 'V-HTTP',
@@ -1415,15 +1416,8 @@ class ExampleTest extends TestCase
         $this->assertDatabaseMissing('ventas', ['numero_venta' => 'V-NOSTOCK']);
     }
 
-    public function test_sales_and_purchases_reject_empty_prices(): void
+    public function test_sales_allow_zero_prices_but_purchases_reject_zero_costs(): void
     {
-        $validation = validator([
-            'items' => [['precio_unitario' => 10], ['precio_unitario' => 0]],
-        ], ['items.*.precio_unitario' => ['required', 'numeric', 'gt:0']]);
-        $this->assertSame(
-            'El campo precio unitario de la fila 2 debe ser mayor que 0.',
-            $validation->errors()->first('items.1.precio_unitario')
-        );
         $user = User::factory()->create(['role' => 'administrador', 'activo' => true]);
         $category = Categoria::create(['nombre' => 'Validaciones fuertes', 'activo' => true]);
         $product = Producto::create([
@@ -1447,16 +1441,9 @@ class ExampleTest extends TestCase
             'items' => [
                 ['producto_id' => $product->id, 'cantidad' => 1, 'precio_unitario' => 0],
             ],
-        ])->assertSessionHasErrors([
-            'items.0.precio_unitario' => 'El campo precio unitario de la fila 1 debe ser mayor que 0.',
-        ]);
+        ])->assertSessionHasNoErrors()->assertRedirect();
 
-        $this->view('partials.flash', ['errors' => session('errors')])
-            ->assertSee('Revise la información')
-            ->assertSee('El campo precio unitario de la fila 1 debe ser mayor que 0.')
-            ->assertDontSee('field must');
-
-        $this->assertDatabaseMissing('ventas', ['numero_venta' => 'V-ZERO-PRICE']);
+        $this->assertDatabaseHas('ventas', ['numero_venta' => 'V-ZERO-PRICE', 'tipo_documento' => 'factura', 'total' => 0]);
 
         $this->actingAs($user)->post(route('notas.store'), [
             'numero_venta' => 'NE-ZERO-PRICE',
@@ -1542,6 +1529,67 @@ class ExampleTest extends TestCase
         } finally {
             Carbon::setTestNow();
         }
+    }
+
+    public function test_consolidated_lot_uses_a_row_with_available_balance(): void
+    {
+        $product = Producto::create([
+            'codigo' => 'DUP-LOT',
+            'nombre' => 'Producto con lotes repetidos',
+            'precio_venta' => 100,
+            'costo_referencial' => 50,
+            'activo' => true,
+        ]);
+
+        $agotado = $product->lotes()->create([
+            'codigo_lote' => '260121',
+            'fecha_vencimiento' => '2027-07-30',
+            'cantidad_inicial' => 5,
+            'cantidad_disponible' => 0,
+            'estado' => 'activo',
+        ]);
+        $disponible = $product->lotes()->create([
+            'codigo_lote' => '260121',
+            'fecha_vencimiento' => '2027-07-30',
+            'cantidad_inicial' => 10,
+            'cantidad_disponible' => 10,
+            'estado' => 'activo',
+        ]);
+
+        $controller = app(SaleController::class);
+        $method = new \ReflectionMethod($controller, 'lotesConsolidados');
+        $method->setAccessible(true);
+        $consolidado = $method->invoke($controller, $product->load('lotes'));
+
+        $this->assertSame($disponible->id, $consolidado->first()['id']);
+        $this->assertSame(10.0, $consolidado->first()['cantidad_disponible']);
+        $this->assertNotSame($agotado->id, $consolidado->first()['id']);
+    }
+
+    public function test_stock_combines_lot_and_no_lot_purchase_entries(): void
+    {
+        $user = User::factory()->create(['role' => 'administrador', 'activo' => true]);
+        $product = Producto::create([
+            'codigo' => 'MIXED-STOCK',
+            'nombre' => 'Producto con stock mixto',
+            'precio_venta' => 100,
+            'costo_referencial' => 50,
+            'activo' => true,
+        ]);
+
+        app(PurchaseService::class)->registrar([
+            'numero_compra' => 'C-MIXED-STOCK',
+            'nombre_comercial' => 'San Benjamin',
+            'fecha' => now()->toDateString(),
+            'items' => [
+                ['producto_id' => $product->id, 'cantidad' => 5, 'costo_unitario' => 50, 'porcentaje_utilidad' => 27, 'codigo_lote' => 'MIX-01', 'fecha_vencimiento' => now()->addYear()->toDateString(), 'impuesto' => 0],
+                ['producto_id' => $product->id, 'cantidad' => 7, 'costo_unitario' => 50, 'porcentaje_utilidad' => 27, 'tipo_lote' => 'sin_lote', 'impuesto' => 0],
+            ],
+        ], $user->id);
+
+        $this->assertSame(12.0, app(InventoryService::class)->stockActual($product));
+        $this->assertSame(12.0, app(InventoryService::class)->stockDisponibleParaVenta($product));
+        $this->assertSame(12.0, $product->fresh()->stock_actual);
     }
 
     public function test_purchase_creates_expiration_batch_and_sale_consumes_nearest_expiration_first(): void
@@ -2485,7 +2533,7 @@ class ExampleTest extends TestCase
             ->assertHeader('content-type', 'application/pdf');
     }
 
-    public function test_monthly_balance_separates_sales_purchases_invoices_notes_and_generates_pdf(): void
+    public function test_monthly_balance_uses_only_invoices_and_generates_pdf(): void
     {
         $user = User::factory()->create(['role' => 'administrador', 'activo' => true]);
         $client = Cliente::create(['nombre' => 'Cliente balance', 'documento' => '555111', 'activo' => true]);
@@ -2562,9 +2610,9 @@ class ExampleTest extends TestCase
             ->assertSee('San Benjamin')
             ->assertSee('Supra Medic')
             ->assertSee('Bs 100.00')
-            ->assertSee('Bs 80.00')
             ->assertSee('Bs 200.00')
-            ->assertSee('Bs 50.00')
+            ->assertDontSee('Bs 80.00')
+            ->assertDontSee('Bs 50.00')
             ->assertSee('Diferencia (compras - ventas)')
             ->assertSee('IVA 13%')
             ->assertSee('IT 3%')
@@ -2987,7 +3035,7 @@ class ExampleTest extends TestCase
             ->assertSee(route('clientes.historial'), false);
     }
 
-    public function test_sale_history_header_edit_requires_password_and_keeps_stock(): void
+    public function test_sale_history_header_edit_persists_the_selected_commercial_name_and_keeps_stock(): void
     {
         $user = User::factory()->create(['role' => 'administrador', 'activo' => true, 'password' => 'admin123']);
         $cliente = Cliente::create(['nombre' => 'Cliente historial', 'documento' => '111', 'activo' => true]);
@@ -3024,15 +3072,13 @@ class ExampleTest extends TestCase
 
         $this->actingAs($user)
             ->put(route('ventas.historial.update', $sale), [
-                'force_password' => 'mala',
-                'nombre_comercial' => 'Supra Medic',
+                'nombre_comercial' => 'Empresa no valida',
                 'fecha' => now()->toDateString(),
             ])
-            ->assertSessionHasErrors('force_password');
+            ->assertSessionHasErrors('nombre_comercial');
 
         $this->actingAs($user)
             ->put(route('ventas.historial.update', $sale), [
-                'force_password' => 'admin123',
                 'nombre_comercial' => 'Supra Medic',
                 'cliente_id' => $cliente->id,
                 'fecha' => now()->toDateString(),
@@ -3071,7 +3117,7 @@ class ExampleTest extends TestCase
         });
 
         $this->actingAs($user)->put(route('ventas.historial.update', $note), [
-            'force_password' => 'admin123',
+            'nombre_comercial' => 'San Benjamin',
             'fecha' => today()->toDateString(),
             'tipo_documento' => 'factura',
             'factura' => 'F-NO-GUARDADA',
@@ -3083,7 +3129,7 @@ class ExampleTest extends TestCase
         $this->assertDatabaseCount('auditoria_eventos', 0);
     }
 
-    public function test_purchase_history_header_edit_requires_password_and_keeps_stock(): void
+    public function test_purchase_history_header_edit_persists_the_selected_commercial_name_and_keeps_stock(): void
     {
         $user = User::factory()->create(['role' => 'administrador', 'activo' => true, 'password' => 'admin123']);
         $proveedor = Proveedor::create(['nombre' => 'Proveedor historial', 'documento' => '999', 'activo' => true]);
@@ -3115,15 +3161,13 @@ class ExampleTest extends TestCase
 
         $this->actingAs($user)
             ->put(route('compras.historial.update', $purchase), [
-                'force_password' => 'mala',
-                'nombre_comercial' => 'Supra Medic',
+                'nombre_comercial' => 'Empresa no valida',
                 'fecha' => now()->toDateString(),
             ])
-            ->assertSessionHasErrors('force_password');
+            ->assertSessionHasErrors('nombre_comercial');
 
         $this->actingAs($user)
             ->put(route('compras.historial.update', $purchase), [
-                'force_password' => 'admin123',
                 'nombre_comercial' => 'Supra Medic',
                 'proveedor_id' => $proveedor->id,
                 'fecha' => now()->toDateString(),

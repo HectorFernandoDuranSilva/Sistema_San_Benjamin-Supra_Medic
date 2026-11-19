@@ -12,6 +12,7 @@
 </div>
 
 <form class="actions" method="get" style="margin-bottom:12px;">
+    <input name="buscar" value="{{ request('buscar') }}" placeholder="Código, nombre, marca o medida">
     <input type="date" name="desde" value="{{ request('desde') }}">
     <input type="date" name="hasta" value="{{ request('hasta') }}">
     <select name="producto_id">
@@ -66,14 +67,15 @@
                 <th>Lote</th>
                 <th>Referencia</th>
                 <th>Tercero</th>
+                <th>Observación</th>
                 <th>Usuario que registró</th>
             </tr>
         </thead>
         <tbody>
             @forelse($movimientos as $m)
                 <tr>
-                    @php($horaRegistro = $m->created_at ?: $m->fecha_movimiento)
-                    <td>{{ $m->fecha_movimiento->format('d/m/Y') }}<br><small>{{ $horaRegistro->format('H:i') }}</small></td>
+                    @php($registro = $m->fecha_movimiento ?: $m->created_at)
+                    <td>{{ $registro?->format('d/m/Y') ?: '-' }}<br><small>{{ $registro?->format('H:i:s') ?: '-' }}</small></td>
                     <td>{{ $m->producto?->codigo }} {{ $m->producto?->nombre }}</td>
                     <td>{{ ucfirst(str_replace('_', ' ', $m->tipo_movimiento)) }}</td>
                     <td>{{ in_array($m->tipo_movimiento, ['entrada', 'ajuste_positivo', 'devolucion', 'anulacion'], true) ? number_format($m->cantidad, 2) : '-' }}</td>
@@ -85,10 +87,11 @@
                     <td>{{ $m->kardex_lote }}</td>
                     <td>{{ $m->kardex_documento }}</td>
                     <td>{{ $m->kardex_tercero }}</td>
+                    <td>{{ $m->kardex_observacion }}</td>
                     <td>{{ $m->usuario?->name ?: $m->usuario?->username ?: 'Sin usuario registrado (histórico)' }}</td>
                 </tr>
             @empty
-                <tr><td colspan="13">No hay movimientos para los filtros seleccionados.</td></tr>
+                <tr><td colspan="14">No hay movimientos para los filtros seleccionados.</td></tr>
             @endforelse
         </tbody>
     </table>

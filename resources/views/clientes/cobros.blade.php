@@ -15,6 +15,32 @@
     <button class="btn secondary">Filtrar</button>
 </form>
 
+<form class="card" method="post" action="{{ route('clientes.cobros.store') }}" style="margin-bottom:16px;">
+    @csrf
+    <h2>Registrar pago por cliente</h2>
+    <p class="muted">El importe se aplicará a la factura o nota seleccionada. Si deja automático, se aplicará desde la deuda más antigua.</p>
+    <div class="row">
+        <div class="field"><label>Cliente</label><select name="cliente_id" required><option value="">Seleccione</option>@foreach($clientes as $cliente)<option value="{{ $cliente->id }}" @selected(old('cliente_id') == $cliente->id)>{{ $cliente->nombre_mostrable }}</option>@endforeach</select></div>
+        <div class="field"><label>Factura o nota específica</label><select name="venta_id" id="cobro-venta"><option value="">Automático: deuda más antigua</option>@foreach($documentos as $documento)<option value="{{ $documento->id }}" data-cliente-id="{{ $documento->cliente_id }}" @selected(old('venta_id') == $documento->id)>{{ $documento->numero_venta }} · {{ $documento->cliente?->nombre_mostrable }} · saldo Bs {{ number_format($documento->saldo_actual, 2) }}</option>@endforeach</select></div>
+        <div class="field"><label>Importe Bs</label><input name="importe" type="number" step="0.01" min="0.01" value="{{ old('importe') }}" required></div>
+        <div class="field"><label>Fecha</label><input name="fecha" type="date" value="{{ old('fecha', now()->toDateString()) }}" required></div>
+        <div class="field"><label>Medio</label><select name="medio" required><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="deposito">Depósito</option></select></div>
+        <div class="field"><label>Referencia</label><input name="referencia" maxlength="255" value="{{ old('referencia') }}"></div>
+    </div>
+    <button class="btn">Registrar pago</button>
+</form>
+
+<form class="card" method="post" action="{{ route('clientes.cobros.finiquitar') }}" style="margin-bottom:16px;" data-glass-confirm="¿Confirmar el finiquito de toda la cuenta seleccionada? Se registrará la regularización y el saldo quedará en Bs 0.00.">
+    @csrf
+    <h2>Finiquitar cuenta</h2>
+    <p class="muted">Seleccione el cliente. El sistema regularizará todas sus facturas y notas pendientes, incluyendo cuotas, sin borrar documentos ni cobros anteriores.</p>
+    <div class="row">
+        <div class="field"><label>Cliente</label><select name="cliente_id" required><option value="">Seleccione</option>@foreach($clientes as $cliente)<option value="{{ $cliente->id }}">{{ $cliente->nombre_mostrable }}</option>@endforeach</select></div>
+        <input type="hidden" name="confirmar" value="1">
+    </div>
+    <button class="btn" type="submit">Finiquitar cuenta</button>
+</form>
+
 <div class="card">
     <div class="top"><h2>Documentos por cobrar</h2><strong>{{ $documentos->count() }} pendientes</strong></div>
     <table>
@@ -37,3 +63,27 @@
     </table>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+(function () {
+    const cliente = document.querySelector('select[name="cliente_id"]');
+    const venta = document.getElementById('cobro-venta');
+    if (!cliente || !venta) return;
+
+    function filtrarDocumentos() {
+        const clienteId = cliente.value;
+        let seleccionValida = venta.value === '';
+        venta.querySelectorAll('option[data-cliente-id]').forEach(function (option) {
+            const visible = !clienteId || option.dataset.clienteId === clienteId;
+            option.hidden = !visible;
+            if (option.value === venta.value && visible) seleccionValida = true;
+        });
+        if (!seleccionValida) venta.value = '';
+    }
+
+    cliente.addEventListener('change', filtrarDocumentos);
+    filtrarDocumentos();
+}());
+</script>
+@endpush

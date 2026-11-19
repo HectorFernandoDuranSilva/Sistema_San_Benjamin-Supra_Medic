@@ -12,7 +12,7 @@ COPY vite.config.js ./
 RUN npm run build
 
 
-FROM php:8.4-fpm-bookworm AS app
+FROM php:8.4.27-fpm-bookworm AS app
 
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
@@ -39,7 +39,7 @@ COPY --from=assets /app/public/build ./public/build
 
 RUN rm -f bootstrap/cache/*.php \
     && composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-scripts \
-    && mkdir -p storage/app storage/framework/cache storage/framework/sessions storage/framework/views storage/logs \
+    && mkdir -p storage/app storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
     && chown -R www-data:www-data storage bootstrap/cache
 
 CMD ["php-fpm"]

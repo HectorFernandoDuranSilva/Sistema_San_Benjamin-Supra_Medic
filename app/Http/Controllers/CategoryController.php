@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Categoria;
+use App\Services\AuditLogService;
 use Illuminate\Http\Request;
 
 class CategoryController extends Controller
@@ -43,12 +44,16 @@ class CategoryController extends Controller
         }
 
         if ($categoria->productos()->exists()) {
+            $before = $categoria->only(['nombre', 'descripcion', 'activo']);
             $categoria->update(['activo' => false]);
+            app(AuditLogService::class)->record($request, 'desactivo', 'categorias', $categoria, $before, $categoria->only(array_keys($before)), 'Categoría desactivada porque tiene productos asociados.');
 
             return back()->with('ok', 'Categoria desactivada porque tiene productos asociados.');
         }
 
+        $before = $categoria->only(['nombre', 'descripcion', 'activo']);
         $categoria->delete();
+        app(AuditLogService::class)->record($request, 'elimino', 'categorias', $categoria, $before, null, 'Categoría eliminada definitivamente.');
 
         return back()->with('ok', 'Categoria eliminada.');
     }

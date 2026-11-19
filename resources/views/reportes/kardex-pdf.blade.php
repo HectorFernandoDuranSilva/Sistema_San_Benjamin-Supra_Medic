@@ -56,14 +56,15 @@
                 <th>Lote</th>
                 <th>Referencia</th>
                 <th>Tercero</th>
+                <th>Observación</th>
                 <th>Usuario que registró</th>
             </tr>
         </thead>
         <tbody>
             @foreach($movimientos as $m)
                 <tr>
-                    @php($horaRegistro = $m->created_at ?: $m->fecha_movimiento)
-                    <td>{{ $m->fecha_movimiento->format('d/m/Y') }}<br>{{ $horaRegistro->format('H:i') }}</td>
+                    @php($registro = $m->fecha_movimiento ?: $m->created_at)
+                    <td>{{ $registro?->format('d/m/Y') ?: '-' }}<br>{{ $registro?->format('H:i:s') ?: '-' }}</td>
                     <td>{{ $m->producto?->codigo }}</td>
                     <td>{{ $m->producto?->nombre }}</td>
                     <td>{{ ucfirst(str_replace('_', ' ', $m->tipo_movimiento)) }}</td>
@@ -76,6 +77,7 @@
                     <td>{{ $m->kardex_lote }}</td>
                     <td>{{ $m->kardex_documento }}</td>
                     <td>{{ $m->kardex_tercero }}</td>
+                    <td>{{ $m->kardex_observacion }}</td>
                     <td>{{ $m->usuario?->name ?: $m->usuario?->username ?: 'Sin usuario registrado (histórico)' }}</td>
                 </tr>
             @endforeach

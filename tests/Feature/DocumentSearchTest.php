@@ -239,4 +239,58 @@ class DocumentSearchTest extends TestCase
             ->assertSee('V-KARDEX-UNO')
             ->assertDontSee('V-KARDEX-DOS');
     }
+
+    public function test_kardex_search_filters_by_product_code_or_name(): void
+    {
+        $user = $this->signIn();
+        $needle = Producto::create([
+            'codigo' => 'KDX-SEARCH-01',
+            'nombre' => 'Reactivo buscable en kardex',
+            'precio_venta' => 20,
+            'costo_referencial' => 10,
+            'stock_minimo' => 0,
+            'activo' => true,
+        ]);
+        $other = Producto::create([
+            'codigo' => 'KDX-OTHER-01',
+            'nombre' => 'Producto que no coincide',
+            'precio_venta' => 20,
+            'costo_referencial' => 10,
+            'stock_minimo' => 0,
+            'activo' => true,
+        ]);
+
+        MovimientoInventario::create([
+            'producto_id' => $needle->id,
+            'tipo_movimiento' => 'entrada',
+            'cantidad' => 2,
+            'stock_anterior' => 0,
+            'stock_nuevo' => 2,
+            'referencia_tipo' => 'compra',
+            'referencia_id' => null,
+            'usuario_id' => $user->id,
+            'fecha_movimiento' => '2026-09-10 10:00:00',
+        ]);
+        MovimientoInventario::create([
+            'producto_id' => $other->id,
+            'tipo_movimiento' => 'entrada',
+            'cantidad' => 3,
+            'stock_anterior' => 0,
+            'stock_nuevo' => 3,
+            'referencia_tipo' => 'compra',
+            'referencia_id' => null,
+            'usuario_id' => $user->id,
+            'fecha_movimiento' => '2026-09-10 10:00:00',
+        ]);
+
+        $response = $this->get(route('reportes.kardex', ['buscar' => 'KDX-SEARCH-01']))
+            ->assertOk();
+        $tableBody = (string) preg_replace('/.*<tbody>(.*?)<\/tbody>.*/s', '$1', $response->getContent());
+        $this->assertStringContainsString('Reactivo buscable en kardex', $tableBody);
+        $this->assertStringNotContainsString('Producto que no coincide', $tableBody);
+
+        $this->get(route('reportes.kardex.pdf', ['buscar' => 'Reactivo buscable']))
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
+    }
 }

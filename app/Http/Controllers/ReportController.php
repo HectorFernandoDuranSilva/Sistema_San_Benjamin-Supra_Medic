@@ -6,6 +6,7 @@ use App\Models\Compra;
 use App\Models\Cliente;
 use App\Models\DetalleCompra;
 use App\Models\DetalleVenta;
+use App\Models\GastoOperativo;
 use App\Models\MovimientoInventario;
 use App\Models\Producto;
 use App\Models\ReporteGuardado;
@@ -129,6 +130,15 @@ class ReportController extends Controller
         ])->setPaper('letter', 'landscape')->download('reporte-notas-facturas.pdf');
     }
 
+    public function notasEntregaPdf(Request $request)
+    {
+        $data = $this->deliveryNotesReportData($request);
+
+        return Pdf::loadView('reportes.notas-entrega-pdf', $data + [
+            'generadoEn' => now(),
+        ])->setPaper('letter', 'landscape')->download('notas-entrega-' . $data['mes'] . '.pdf');
+    }
+
     public function documentosExcel(Request $request)
     {
         $data = $this->documentReportData($request, false);
@@ -142,7 +152,7 @@ class ReportController extends Controller
             [],
             ['Concepto', 'Total Bs'],
             ['Ventas facturadas'],
-            ['Notas de venta'],
+            ['Notas de entrega (informativo, no ingresa al balance)'],
             ['Compras facturadas'],
             ['Notas de compra'],
             ['Diferencia (compras - ventas)'],
@@ -202,42 +212,39 @@ class ReportController extends Controller
             ['Período', $data['desde'] . ' al ' . $data['hasta']],
             ['Nota', 'Edite esta copia solo para revisión contable. Los cambios no modifican los documentos del sistema.'],
             [],
-            ['Empresa', 'Facturas venta', 'Notas venta', 'Facturas compra', 'Notas compra', 'Diferencia', 'IVA 13%', 'IT 3%', 'Por pagar', 'Total ventas', 'Total compras', 'Resultado comercial'],
+            ['Empresa', 'Facturas venta', 'Facturas compra', 'Gastos operativos', 'Diferencia', 'IVA 13%', 'IT 3%', 'Por pagar', 'Resultado comercial'],
         ]);
 
-        $this->addDocumentSheet($spreadsheet, 'Facturas venta', $data['ventas']->where('tipo_documento', 'factura'), 'cliente');
-        $this->addDocumentSheet($spreadsheet, 'Notas venta', $data['ventas']->where('tipo_documento', 'nota_entrega'), 'cliente');
-        $this->addDocumentSheet($spreadsheet, 'Facturas compra', $data['compras']->where('tipo_documento', 'factura'), 'proveedor');
-        $this->addDocumentSheet($spreadsheet, 'Notas compra', $data['compras']->where('tipo_documento', 'nota_entrega'), 'proveedor');
+        $ventasFacturas = $data['ventas']->filter(fn (Venta $venta) => $venta->tipo_documento !== 'nota_entrega')->values();
+        $comprasFacturas = $data['compras']->filter(fn (Compra $compra) => $compra->tipo_documento !== 'nota_entrega')->values();
+        $this->addDocumentSheet($spreadsheet, 'Facturas venta', $ventasFacturas, 'cliente');
+        $this->addDocumentSheet($spreadsheet, 'Facturas compra', $comprasFacturas, 'proveedor');
 
         foreach ($data['porNombre'] as $item) {
             $row = $sheet->getHighestRow() + 1;
             $sheet->setCellValue('A' . $row, $item['nombre_comercial']);
-            $sheet->setCellValue('B' . $row, $this->documentTotalByCompanyFormula('Facturas venta', $data['ventas']->where('tipo_documento', 'factura'), $row));
-            $sheet->setCellValue('C' . $row, $this->documentTotalByCompanyFormula('Notas venta', $data['ventas']->where('tipo_documento', 'nota_entrega'), $row));
-            $sheet->setCellValue('D' . $row, $this->documentTotalByCompanyFormula('Facturas compra', $data['compras']->where('tipo_documento', 'factura'), $row));
-            $sheet->setCellValue('E' . $row, $this->documentTotalByCompanyFormula('Notas compra', $data['compras']->where('tipo_documento', 'nota_entrega'), $row));
-            $sheet->setCellValue('F' . $row, '=D' . $row . '-B' . $row);
-            $sheet->setCellValue('G' . $row, '=F' . $row . '*13%');
-            $sheet->setCellValue('H' . $row, '=B' . $row . '*3%');
-            $sheet->setCellValue('I' . $row, '=G' . $row . '+H' . $row);
-            $sheet->setCellValue('J' . $row, '=B' . $row . '+C' . $row);
-            $sheet->setCellValue('K' . $row, '=D' . $row . '+E' . $row);
-            $sheet->setCellValue('L' . $row, '=J' . $row . '-K' . $row);
+            $sheet->setCellValue('B' . $row, $this->documentTotalByCompanyFormula('Facturas venta', $ventasFacturas, $row));
+            $sheet->setCellValue('C' . $row, $this->documentTotalByCompanyFormula('Facturas compra', $comprasFacturas, $row));
+            $sheet->setCellValue('D' . $row, (float) $data['gastosOperativos']->where('nombre_comercial', $item['nombre_comercial'])->sum('importe'));
+            $sheet->setCellValue('E' . $row, '=C' . $row . '-B' . $row);
+            $sheet->setCellValue('F' . $row, '=E' . $row . '*13%');
+            $sheet->setCellValue('G' . $row, '=B' . $row . '*3%');
+            $sheet->setCellValue('H' . $row, '=F' . $row . '+G' . $row);
+            $sheet->setCellValue('I' . $row, '=B' . $row . '-C' . $row . '-D' . $row);
         }
 
         $firstDataRow = 6;
         $totalRow = $sheet->getHighestRow() + 1;
         $sheet->setCellValue('A' . $totalRow, 'Total');
-        foreach (range('B', 'L') as $column) {
+        foreach (range('B', 'I') as $column) {
             $sheet->setCellValue($column . $totalRow, '=SUM(' . $column . $firstDataRow . ':' . $column . ($totalRow - 1) . ')');
         }
-        $sheet->getStyle('A1:L1')->getFont()->setBold(true);
-        $sheet->getStyle('A5:L5')->getFont()->setBold(true);
-        $sheet->getStyle('A' . $sheet->getHighestRow() . ':L' . $sheet->getHighestRow())->getFont()->setBold(true);
-        $sheet->getStyle('B6:L' . $sheet->getHighestRow())->getNumberFormat()->setFormatCode('#,##0.00');
-        $sheet->getStyle('I6:I' . $sheet->getHighestRow())->getNumberFormat()->setFormatCode('#,##0.00;[Red]-#,##0.00');
-        foreach (range('A', 'L') as $column) {
+        $sheet->getStyle('A1:I1')->getFont()->setBold(true);
+        $sheet->getStyle('A5:I5')->getFont()->setBold(true);
+        $sheet->getStyle('A' . $sheet->getHighestRow() . ':I' . $sheet->getHighestRow())->getFont()->setBold(true);
+        $sheet->getStyle('B6:I' . $sheet->getHighestRow())->getNumberFormat()->setFormatCode('#,##0.00');
+        $sheet->getStyle('H6:H' . $sheet->getHighestRow())->getNumberFormat()->setFormatCode('#,##0.00;[Red]-#,##0.00');
+        foreach (range('A', 'I') as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
 
@@ -322,7 +329,18 @@ class ReportController extends Controller
 
     private function kardexQuery(Request $request)
     {
+        $buscar = trim((string) $request->input('buscar', ''));
+
         return MovimientoInventario::with('producto', 'usuario')
+            ->when($buscar !== '', function ($query) use ($buscar) {
+                $term = '%' . $buscar . '%';
+                $query->whereHas('producto', fn ($producto) => $producto
+                    ->where('codigo', 'like', $term)
+                    ->orWhere('nombre', 'like', $term)
+                    ->orWhere('marca', 'like', $term)
+                    ->orWhere('procedencia', 'like', $term)
+                    ->orWhere('medida', 'like', $term));
+            })
             ->when($request->filled('producto_id'), fn ($q) => $q->where('producto_id', $request->producto_id))
             ->when($request->filled('desde'), fn ($q) => $q->whereDate('fecha_movimiento', '>=', $request->desde))
             ->when($request->filled('hasta'), fn ($q) => $q->whereDate('fecha_movimiento', '<=', $request->hasta))
@@ -333,9 +351,10 @@ class ReportController extends Controller
                     'referencia_id',
                     Venta::where('cliente_id', $request->integer('cliente_id'))->select('id')
                 ))
-            ->orderBy('producto_id')
-            ->orderBy('fecha_movimiento')
-            ->orderBy('id');
+            // The ledger is a chronological journal. Ordering by product first
+            // made movements from different products appear out of sequence.
+            ->orderByDesc('fecha_movimiento')
+            ->orderByDesc('id');
     }
 
     private function attachKardexReferenceData($movimientos)
@@ -395,11 +414,25 @@ class ReportController extends Controller
                 $tercero = $venta?->cliente?->nombre_mostrable;
             }
 
+            if ($movimiento->referencia_tipo === 'lote') {
+                $documento = 'Lote #' . ($movimiento->referencia_id ?: '-');
+            } elseif ($movimiento->referencia_tipo === 'ajuste_manual') {
+                $documento = 'Ajuste manual';
+            } elseif ($movimiento->referencia_tipo === 'regularizacion_faltante') {
+                $documento = 'Regularización de faltante';
+            } elseif ($movimiento->referencia_tipo === 'importacion_excel') {
+                $documento = 'Importación Excel';
+            } elseif ($movimiento->referencia_tipo === 'inventario_inicial') {
+                $documento = 'Inventario inicial';
+            }
+
             $movimiento->setAttribute('kardex_documento', $documento ?: '-');
             $movimiento->setAttribute('kardex_tercero', $tercero ?: '-');
             $movimiento->setAttribute('kardex_precio_unitario', $precioUnitario);
             $movimiento->setAttribute('kardex_total_linea', $totalLinea);
             $movimiento->setAttribute('kardex_lote', $lote ?: '-');
+
+            $movimiento->setAttribute('kardex_observacion', $movimiento->observacion ?: '-');
 
             return $movimiento;
         });
@@ -483,8 +516,9 @@ class ReportController extends Controller
             'comprasResumen' => $comprasResumen,
             'tributarioPorNombre' => $this->tributarioPorNombre($ventasFacturadas, $comprasFacturadas, $nombreComercial),
             'totales' => $totales + [
-                'ventas' => $ventasResumen->sum('total'),
-                'compras' => $comprasResumen->sum('total'),
+                'notas_entrega' => $notasVentasQuery->sum('total'),
+                'ventas' => $ventasFacturadas->sum('total'),
+                'compras' => $comprasFacturadas->sum('total'),
             ],
             'filtros' => [
                 'desde' => $desde,
@@ -537,18 +571,31 @@ class ReportController extends Controller
 
     private function monthlyBalanceData(Request $request): array
     {
-        $month = $request->input('mes', now()->format('Y-m'));
-        $nombreComercial = $request->input('nombre_comercial');
+        $month = $this->normalizedMonth($request->input('mes'));
+        $nombreComercial = $this->validCommercialName($request->input('nombre_comercial'));
         $period = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
         $desde = $period->copy()->startOfMonth()->toDateString();
         $hasta = $period->copy()->endOfMonth()->toDateString();
 
         $ventas = Venta::with('cliente')->where('estado', 'registrada')
+            ->where(fn ($query) => $query->whereNull('tipo_documento')->orWhere('tipo_documento', '!=', 'nota_entrega'))
             ->whereDate('fecha', '>=', $desde)
             ->whereDate('fecha', '<=', $hasta)
             ->when($nombreComercial, fn ($query) => $query->where('nombre_comercial', $nombreComercial))
             ->get();
         $compras = Compra::with('proveedor')->where('estado', 'registrada')
+            ->where(fn ($query) => $query->whereNull('tipo_documento')->orWhere('tipo_documento', '!=', 'nota_entrega'))
+            ->whereDate('fecha', '>=', $desde)
+            ->whereDate('fecha', '<=', $hasta)
+            ->when($nombreComercial, fn ($query) => $query->where('nombre_comercial', $nombreComercial))
+            ->get();
+        $notasEntrega = Venta::with('cliente')->where('estado', 'registrada')
+            ->where('tipo_documento', 'nota_entrega')
+            ->whereDate('fecha', '>=', $desde)
+            ->whereDate('fecha', '<=', $hasta)
+            ->when($nombreComercial, fn ($query) => $query->where('nombre_comercial', $nombreComercial))
+            ->get();
+        $gastosOperativos = GastoOperativo::query()
             ->whereDate('fecha', '>=', $desde)
             ->whereDate('fecha', '<=', $hasta)
             ->when($nombreComercial, fn ($query) => $query->where('nombre_comercial', $nombreComercial))
@@ -557,29 +604,28 @@ class ReportController extends Controller
         $nombres = collect($nombreComercial ? [$nombreComercial] : ['San Benjamin', 'Supra Medic'])
             ->merge($ventas->pluck('nombre_comercial'))
             ->merge($compras->pluck('nombre_comercial'))
+            ->merge($gastosOperativos->pluck('nombre_comercial'))
             ->filter()
             ->unique()
             ->values();
 
-        $porNombre = $nombres->map(function (string $nombre) use ($ventas, $compras) {
+        $porNombre = $nombres->map(function (string $nombre) use ($ventas, $compras, $gastosOperativos) {
             $ventasNombre = $ventas->where('nombre_comercial', $nombre);
             $comprasNombre = $compras->where('nombre_comercial', $nombre);
             $ventasFacturas = $ventasNombre->filter(fn ($venta) => $venta->tipo_documento !== 'nota_entrega')->sum('total');
-            $ventasNotas = $ventasNombre->where('tipo_documento', 'nota_entrega')->sum('total');
             $comprasFacturas = $comprasNombre->filter(fn ($compra) => $compra->tipo_documento !== 'nota_entrega')->sum('total');
-            $comprasNotas = $comprasNombre->where('tipo_documento', 'nota_entrega')->sum('total');
+            $gastosNombre = $gastosOperativos->where('nombre_comercial', $nombre)->sum('importe');
             $tributario = $this->totalesTributarios($ventasFacturas, $comprasFacturas);
 
             return [
                 'nombre_comercial' => $nombre,
                 'ventas_facturas' => $ventasFacturas,
-                'ventas_notas' => $ventasNotas,
                 'compras_facturas' => $comprasFacturas,
                 'compras_deducibles' => $comprasFacturas,
-                'compras_notas' => $comprasNotas,
-                'ventas_total' => $ventasFacturas + $ventasNotas,
-                'compras_total' => $comprasFacturas + $comprasNotas,
-                'resultado' => ($ventasFacturas + $ventasNotas) - ($comprasFacturas + $comprasNotas),
+                'ventas_total' => $ventasFacturas,
+                'compras_total' => $comprasFacturas,
+                'gastos_operativos' => $gastosNombre,
+                'resultado' => $ventasFacturas - $comprasFacturas - $gastosNombre,
                 ...$tributario,
             ];
         });
@@ -590,12 +636,12 @@ class ReportController extends Controller
         ) + [
             'ventas_facturas' => $porNombre->sum('ventas_facturas'),
             'compras_facturas' => $porNombre->sum('compras_facturas'),
-            'ventas_notas' => $porNombre->sum('ventas_notas'),
             'compras_deducibles' => $porNombre->sum('compras_deducibles'),
-            'compras_notas' => $porNombre->sum('compras_notas'),
             'ventas_total' => $porNombre->sum('ventas_total'),
             'compras_total' => $porNombre->sum('compras_total'),
+            'gastos_operativos' => $porNombre->sum('gastos_operativos'),
             'resultado' => $porNombre->sum('resultado'),
+            'notas_entrega' => $notasEntrega->sum('total'),
         ];
 
         $maxGrafico = max(1, $porNombre->max(fn ($item) => max($item['ventas_total'], $item['compras_total'])));
@@ -611,7 +657,69 @@ class ReportController extends Controller
             'maxGrafico' => $maxGrafico,
             'ventas' => $ventas,
             'compras' => $compras,
+            'notasEntrega' => $notasEntrega,
+            'gastosOperativos' => $gastosOperativos,
         ];
+    }
+
+    private function deliveryNotesReportData(Request $request): array
+    {
+        $month = $this->normalizedMonth($request->input('mes'));
+        $period = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+        $desde = $this->normalizedDate($request->input('desde'), $period->copy()->startOfMonth()->toDateString());
+        $hasta = $this->normalizedDate($request->input('hasta'), $period->copy()->endOfMonth()->toDateString());
+        $nombreComercial = $this->validCommercialName($request->input('nombre_comercial'));
+
+        $notas = Venta::with('cliente')
+            ->where('estado', 'registrada')
+            ->where('tipo_documento', 'nota_entrega')
+            ->whereDate('fecha', '>=', $desde)
+            ->whereDate('fecha', '<=', $hasta)
+            ->when($nombreComercial, fn ($query) => $query->where('nombre_comercial', $nombreComercial))
+            ->latest('fecha')
+            ->latest('id')
+            ->get();
+
+        return [
+            'mes' => $period->format('Y-m'),
+            'desde' => $desde,
+            'hasta' => $hasta,
+            'nombreComercial' => $nombreComercial,
+            'notas' => $notas,
+            'totalNotas' => $notas->sum('total'),
+            'porNombre' => $notas->groupBy(fn (Venta $nota) => $nota->nombre_comercial ?: 'Sin nombre comercial')
+                ->map(fn ($items, $nombre) => ['nombre_comercial' => $nombre, 'cantidad' => $items->count(), 'total' => $items->sum('total')])
+                ->values(),
+        ];
+    }
+
+    private function normalizedMonth(mixed $month): string
+    {
+        $month = (string) $month;
+
+        return preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)
+            ? $month
+            : now()->format('Y-m');
+    }
+
+    private function normalizedDate(mixed $date, string $fallback): string
+    {
+        $date = (string) $date;
+
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return $fallback;
+        }
+
+        $parsed = Carbon::createFromFormat('!Y-m-d', $date);
+
+        return $parsed->format('Y-m-d') === $date ? $date : $fallback;
+    }
+
+    private function validCommercialName(mixed $nombreComercial): ?string
+    {
+        return in_array($nombreComercial, ['San Benjamin', 'Supra Medic'], true)
+            ? $nombreComercial
+            : null;
     }
 
     private function totalesTributarios(float $ventasFacturadas, float $comprasFacturadas): array

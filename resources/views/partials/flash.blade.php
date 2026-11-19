@@ -10,13 +10,22 @@
     </div>
 @endif
 
-@if(($errors ?? null)?->any())
+@php
+    $flashErrors = ($errors ?? null)?->getMessages() ?? [];
+    if (request()->routeIs('compras.create')) {
+        unset($flashErrors['venta']);
+    }
+@endphp
+
+@if($flashErrors)
     <div class="glass-modal-backdrop is-open" role="dialog" aria-modal="true">
         <div class="glass-modal is-error">
             <h2>Revise la información</h2>
             <ul class="glass-modal-list">
-                @foreach($errors->all() as $error)
-                    <li>{{ $error }}</li>
+                @foreach($flashErrors as $messages)
+                    @foreach($messages as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
                 @endforeach
             </ul>
             <div class="glass-modal-actions">

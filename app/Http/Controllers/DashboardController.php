@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Compra;
 use App\Models\ConfiguracionEmpresa;
+use App\Models\DetalleVenta;
+use App\Models\GastoOperativo;
 use App\Models\InventarioLote;
 use App\Models\MovimientoInventario;
 use App\Models\Producto;
@@ -21,25 +23,32 @@ class DashboardController extends Controller
         }
 
         $configuracion = ConfiguracionEmpresa::firstOrCreate([]);
+        $nombreComercial = session('commercial_context.name');
         $diasAlertaVencimiento = max(1, (int) ($configuracion->dias_alerta_vencimiento ?? 30));
         $diasAtrasoCuotas = max(1, (int) ($configuracion->dias_alerta_cuotas ?? 10));
         $ventasHoy = Venta::whereDate('fecha', today())->where('estado', 'registrada')
+            ->where('nombre_comercial', $nombreComercial)
             ->where(fn ($query) => $query->whereNull('tipo_documento')->orWhere('tipo_documento', '!=', 'nota_entrega'));
         $productos = Producto::with('categoria')->where('activo', true)->get();
         $productosBajoStock = $productos->filter(fn ($producto) => $producto->stock_actual <= (float) $producto->stock_minimo);
         $productosSinPrecio = $productos->filter(fn ($producto) => (float) $producto->precio_venta <= 0);
         $productosSinCategoria = $productos->filter(fn ($producto) => $producto->categoria_id === null);
         $productosStockNegativo = $productos->filter(fn ($producto) => $producto->stock_actual < 0);
-        $entregasSinStockPendientes = $this->entregasSinStockPendientes($productosStockNegativo);
-        $otrosProductosStockNegativo = $productosStockNegativo->reject(fn ($producto) => $entregasSinStockPendientes->contains('producto_id', $producto->id));
+        $documentosStockPendientes = $this->documentosStockPendientes();
+        $entregasSinStockPendientes = $documentosStockPendientes;
+        $otrosProductosStockNegativo = $productosStockNegativo->reject(fn ($producto) => $documentosStockPendientes->flatMap(fn ($venta) => $venta->detalles)->pluck('producto_id')->contains($producto->id));
         $productosSinMarcaProcedencia = $productos->filter(fn ($producto) => trim((string) $producto->marca) === '' || trim((string) $producto->procedencia) === '');
         $lotesSinVencimiento = InventarioLote::with('producto')
             ->where('estado', 'activo')
             ->where('cantidad_disponible', '>', 0)
             ->whereNull('fecha_vencimiento')
             ->get();
-        $ultimasVentas = Venta::with('cliente', 'usuario')->latest()->take(5)->get();
-        $ultimasCompras = Compra::with('proveedor', 'usuario')->latest()->take(5)->get();
+        $ultimasVentas = Venta::with('cliente', 'usuario')
+            ->where('nombre_comercial', $nombreComercial)
+            ->latest()->take(5)->get();
+        $ultimasCompras = Compra::with('proveedor', 'usuario')
+            ->where('nombre_comercial', $nombreComercial)
+            ->latest()->take(5)->get();
         $ultimasOperaciones = $this->ultimasOperaciones($ultimasVentas, $ultimasCompras);
         $movimientoMensual = $this->movimientoMensual();
         $cartera = $this->carteraCuotas($diasAtrasoCuotas);
@@ -51,8 +60,9 @@ class DashboardController extends Controller
             'totalHoy' => (clone $ventasHoy)->sum('total'),
             'productosBajoStock' => $productosBajoStock,
             'productosStockNegativo' => $productosStockNegativo,
+            'documentosStockPendientes' => $documentosStockPendientes,
             'alertasDatos' => $this->alertasDatos($productosSinPrecio, $productosSinCategoria, $otrosProductosStockNegativo, $entregasSinStockPendientes, $productosSinMarcaProcedencia, $lotesSinVencimiento),
-            'ultimosMovimientos' => MovimientoInventario::with('producto', 'usuario')->latest('fecha_movimiento')->take(4)->get(),
+            'ultimosMovimientos' => MovimientoInventario::with('producto', 'usuario')->latest('fecha_movimiento')->latest('id')->take(4)->get(),
             'ultimasOperaciones' => $ultimasOperaciones,
             'movimientoMensual' => $movimientoMensual,
             'diasAlertaVencimiento' => $diasAlertaVencimiento,
@@ -107,8 +117,11 @@ class DashboardController extends Controller
             ];
         }
 
+        $nombreComercial = session('commercial_context.name');
         $cuotas = VentaCuota::with(['venta.cliente', 'cobros'])
-            ->whereHas('venta', fn ($query) => $query->where('estado', 'registrada'))
+            ->whereHas('venta', fn ($query) => $query
+                ->where('estado', 'registrada')
+                ->where('nombre_comercial', $nombreComercial))
             ->orderBy('fecha_vencimiento')
             ->get()
             ->map(function (VentaCuota $cuota) {
@@ -122,6 +135,7 @@ class DashboardController extends Controller
 
         $documentos = Venta::with('cobros')
             ->where('estado', 'registrada')
+            ->where('nombre_comercial', $nombreComercial)
             ->get()
             ->map(function (Venta $venta) {
                 $pagado = (float) $venta->cobros->where('estado', 'registrado')->sum('importe');
@@ -147,25 +161,31 @@ class DashboardController extends Controller
     {
         $desde = today()->startOfMonth();
         $hasta = today()->endOfMonth();
+        $nombreComercial = session('commercial_context.name');
         $ventas = Venta::where('estado', 'registrada')
             ->where(fn ($query) => $query->whereNull('tipo_documento')->orWhere('tipo_documento', '!=', 'nota_entrega'))
+            ->where('nombre_comercial', $nombreComercial)
             ->whereDate('fecha', '>=', $desde)
             ->whereDate('fecha', '<=', $hasta)
-            ->get()
-            ->groupBy(fn ($venta) => $venta->nombre_comercial ?: 'Sin nombre comercial');
+            ->get();
         $compras = Compra::where('estado', 'registrada')
+            ->where('nombre_comercial', $nombreComercial)
             ->whereDate('fecha', '>=', $desde)
             ->whereDate('fecha', '<=', $hasta)
-            ->get()
-            ->groupBy(fn ($compra) => $compra->nombre_comercial ?: 'Sin nombre comercial');
+            ->get();
+        $gastosOperativos = GastoOperativo::where('nombre_comercial', $nombreComercial)
+            ->whereDate('fecha', '>=', $desde)
+            ->whereDate('fecha', '<=', $hasta)
+            ->sum('importe');
 
-        $totalVentas = $ventas->flatten(1)->sum('total');
-        $totalCompras = $compras->flatten(1)->sum('total');
-        $resultado = $totalVentas - $totalCompras;
+        $totalVentas = $ventas->sum('total');
+        $totalCompras = $compras->sum('total');
+        $resultado = $totalVentas - $totalCompras - $gastosOperativos;
 
         return [
             'ventas' => $totalVentas,
             'compras' => $totalCompras,
+            'gastos_operativos' => (float) $gastosOperativos,
             'resultado' => $resultado,
             'porcentaje' => $totalVentas > 0 ? min(100, max(0, round(($resultado / $totalVentas) * 100))) : 0,
         ];
@@ -251,23 +271,39 @@ class DashboardController extends Controller
             ->values();
     }
 
-    private function entregasSinStockPendientes(Collection $productosStockNegativo): Collection
+    private function documentosStockPendientes(): Collection
     {
-        if ($productosStockNegativo->isEmpty()) {
-            return collect();
-        }
-
-        return MovimientoInventario::with(['producto', 'venta'])
+        $ventasConSalidaNegativa = MovimientoInventario::query()
             ->where('referencia_tipo', 'venta')
-            ->whereIn('producto_id', $productosStockNegativo->pluck('id'))
-            ->whereHas('venta', fn ($query) => $query
-                ->where('permitir_salida_sin_stock', true)
-                ->where('estado', 'registrada'))
-            ->latest('fecha_movimiento')
+            ->where('tipo_movimiento', 'salida')
+            ->where('stock_nuevo', '<', 0)
+            ->select('referencia_id')
+            ->distinct();
+
+        return Venta::with(['detalles.producto', 'detalles.lotes'])
+            ->where('estado', 'registrada')
+            ->where('nombre_comercial', session('commercial_context.name'))
+            ->where(function ($query) use ($ventasConSalidaNegativa) {
+                $query->where('permitir_salida_sin_stock', true)
+                    ->orWhereHas('detalles', fn ($details) => $details->where('faltante_stock', '>', 0))
+                    ->orWhereIn('id', $ventasConSalidaNegativa);
+            })
+            ->latest('fecha')
             ->latest('id')
             ->get()
-            ->filter(fn (MovimientoInventario $movimiento) => $movimiento->producto && $movimiento->producto->stock_actual < 0)
-            ->unique('producto_id')
+            ->map(function (Venta $venta) {
+                $venta->faltante_stock_total = $venta->detalles->sum(function (DetalleVenta $detalle) use ($venta) {
+                    $registrado = (float) ($detalle->faltante_stock ?? 0);
+
+                    // Once the detail has an explicit value, including zero,
+                    // it is authoritative. Rebuilding it from an old negative
+                    // movement would make a regularized document reappear.
+                    return max(0, $registrado);
+                });
+
+                return $venta;
+            })
+            ->filter(fn (Venta $venta) => $venta->faltante_stock_total > 0)
             ->values();
     }
 
@@ -297,15 +333,17 @@ class DashboardController extends Controller
             ],
             [
                 'titulo' => 'Faltantes de stock por regularizar',
-                'total' => $productosStockNegativo->count(),
-                'detalle' => $productosStockNegativo->take(2)->map(fn ($producto) => $producto->codigo.' - '.$producto->nombre.' ('.number_format(abs((float) $producto->stock_actual), 2).' faltante)')->join(', ') ?: 'Sin pendientes',
+                'total' => $productosStockNegativo->count() + $entregasSinStockPendientes->count(),
+                'detalle' => $productosStockNegativo->take(1)->map(fn ($producto) => $producto->codigo.' - '.$producto->nombre.' ('.number_format(abs((float) $producto->stock_actual), 2).' faltante)')
+                    ->concat($entregasSinStockPendientes->take(1)->map(fn ($venta) => $venta->numero_venta.' ('.number_format((float) $venta->faltante_stock_total, 2).' unidades)'))
+                    ->join(', ') ?: 'Sin pendientes',
                 'ruta' => route('productos.index'),
                 'permiso' => 'productos',
             ],
             [
                 'titulo' => 'Documentos con stock pendiente',
                 'total' => $entregasSinStockPendientes->count(),
-                'detalle' => $entregasSinStockPendientes->take(2)->map(fn ($movimiento) => $movimiento->producto?->nombre . ' (' . number_format(abs((float) $movimiento->producto?->stock_actual), 2) . ' faltante)')->join(', ') ?: 'Sin pendientes',
+                'detalle' => $entregasSinStockPendientes->take(2)->map(fn ($venta) => $venta->numero_venta . ' (' . number_format((float) $venta->faltante_stock_total, 2) . ' unidades)')->join(', ') ?: 'Sin pendientes',
                 'ruta' => route('inventario.index', ['stock_hasta' => 0]),
                 'permiso' => 'inventario',
             ],

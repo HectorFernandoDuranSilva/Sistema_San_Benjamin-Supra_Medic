@@ -16,6 +16,7 @@ class InventarioLote extends Model
         'fecha_vencimiento',
         'cantidad_inicial',
         'cantidad_disponible',
+        'cantidad_consumida_ajustada',
         'costo_unitario',
         'estado',
         'observacion',
@@ -28,6 +29,7 @@ class InventarioLote extends Model
             'fecha_vencimiento' => 'date',
             'cantidad_inicial' => 'decimal:2',
             'cantidad_disponible' => 'decimal:2',
+            'cantidad_consumida_ajustada' => 'decimal:2',
             'costo_unitario' => 'decimal:2',
         ];
     }

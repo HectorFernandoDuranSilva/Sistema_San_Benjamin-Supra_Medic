@@ -22,14 +22,14 @@
         </div>
     @endif
 
-    @if($user->hasPermission('inventario') || $user->hasPermission('productos') || ($user->hasPermission('reportes') && $user->hasPermission('kardex')))
+    @if($user->hasPermission('inventario') || $user->hasPermission('productos') || $user->hasPermission('kardex'))
         <div class="dock-group">
             <button type="button" class="dock-trigger {{ $inventoryActive ? 'active' : '' }}">Inventario</button>
             <div class="dock-menu">
                 @if($user->hasPermission('inventario'))<a class="{{ request()->routeIs('inventario.*') ? 'active' : '' }}" href="{{ route('inventario.index') }}">Inventario</a>@endif
                 @if($user->hasPermission('productos'))<a class="{{ request()->routeIs('productos.*') ? 'active' : '' }}" href="{{ route('productos.index') }}">Productos</a>@endif
                 @if($user->hasPermission('productos'))<a class="{{ request()->routeIs('categorias.*') ? 'active' : '' }}" href="{{ route('categorias.index') }}">Categorías</a>@endif
-                @if($user->hasPermission('reportes') && $user->hasPermission('kardex'))<a class="{{ request()->routeIs('reportes.kardex*') ? 'active' : '' }}" href="{{ route('reportes.kardex') }}">Kardex</a>@endif
+                @if($user->hasPermission('kardex'))<a class="{{ request()->routeIs('reportes.kardex*') ? 'active' : '' }}" href="{{ route('reportes.kardex') }}">Kardex</a>@endif
             </div>
         </div>
     @endif
@@ -54,6 +54,7 @@
                 @if($user->hasPermission('configuracion'))<a class="{{ request()->routeIs('configuracion.*') ? 'active' : '' }}" href="{{ route('configuracion.edit') }}">Configuración</a>@endif
                 @if($user->isAdmin() && $user->hasPermission('usuarios'))<a class="{{ request()->routeIs('usuarios.*') ? 'active' : '' }}" href="{{ route('usuarios.index') }}">Usuarios</a>@endif
                 @if($user->isAdmin() && $user->hasPermission('seguridad'))<a class="{{ request()->routeIs('seguridad.*') ? 'active' : '' }}" href="{{ route('seguridad.authenticator') }}">Seguridad</a>@endif
+                @if($user->isAdmin() && $user->hasPermission('seguridad'))<a class="{{ request()->routeIs('seguridad.auditoria') ? 'active' : '' }}" href="{{ route('seguridad.auditoria') }}">Auditoría</a>@endif
             </div>
         </div>
     @endif

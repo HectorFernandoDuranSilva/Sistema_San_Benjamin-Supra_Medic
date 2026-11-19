@@ -53,4 +53,43 @@ class ProductIdentityTest extends TestCase
         $this->assertSame('Bioclin', $product->fresh()->marca);
         $this->assertStringContainsString('Brasil', $audit->toJson());
     }
+
+    public function test_new_products_use_the_next_numeric_correlative_code(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'administrador', 'activo' => true]));
+        Producto::create(['codigo' => '900', 'nombre' => 'Producto anterior', 'marca' => 'Marca', 'procedencia' => 'Origen', 'activo' => true]);
+        Producto::create(['codigo' => 'PRODUCTO-901', 'nombre' => 'Código no numérico', 'marca' => 'Marca', 'procedencia' => 'Origen', 'activo' => true]);
+        Producto::create(['codigo' => '41241241', 'nombre' => 'Identificador de prueba', 'marca' => 'Marca', 'procedencia' => 'Origen', 'activo' => true]);
+
+        $this->get(route('productos.create'))
+            ->assertOk()
+            ->assertSee('value="901"', false);
+
+        $data = $this->data();
+        unset($data['codigo']);
+        $this->post(route('productos.store'), $data)->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('productos', ['codigo' => '901', 'nombre' => 'Reactivo de prueba']);
+    }
+
+    public function test_new_products_can_use_a_manual_available_code(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'administrador', 'activo' => true]));
+
+        $data = $this->data();
+        $data['codigo'] = 'MANUAL-902';
+
+        $this->post(route('productos.store'), $data)->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('productos', ['codigo' => 'MANUAL-902', 'nombre' => 'Reactivo de prueba']);
+    }
+
+    public function test_new_products_can_be_saved_without_a_brand(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => 'administrador', 'activo' => true]));
+
+        $data = $this->data();
+        unset($data['marca']);
+
+        $this->post(route('productos.store'), $data)->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('productos', ['nombre' => 'Reactivo de prueba', 'marca' => null]);
+    }
 }

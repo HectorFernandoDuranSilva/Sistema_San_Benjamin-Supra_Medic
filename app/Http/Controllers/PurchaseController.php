@@ -12,6 +12,7 @@ use App\Services\AuditLogService;
 use App\Services\PurchaseService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -26,7 +27,7 @@ class PurchaseController extends Controller
             'anio' => ['nullable', 'integer', 'min:2000', 'max:2100'],
         ]);
 
-        $compras = Compra::with('proveedor', 'usuario')
+        $compras = Compra::with('proveedor', 'usuario', 'auditorias.usuario')
             ->withSum(['pagos as pagado' => fn ($query) => $query->where('estado', 'registrado')], 'importe')
             ->withMax(['pagos as fecha_ultimo_pago' => fn ($query) => $query->where('estado', 'registrado')], 'fecha')
             ->when($filters['buscar'] ?? null, function ($query, $buscar) {
@@ -61,9 +62,16 @@ class PurchaseController extends Controller
     public function store(PurchaseRequest $request, PurchaseService $service)
     {
         try {
-            $compra = $service->registrar($request->validated(), $request->user()->id);
+            $data = $request->validated();
+            $compra = $service->registrar($data, $request->user()->id);
         } catch (InvalidArgumentException $e) {
             return back()->withErrors(['compra' => $e->getMessage()])->withInput();
+        } catch (QueryException $e) {
+            if ((string) $e->getCode() === '23000' || str_contains(strtolower($e->getMessage()), 'unique')) {
+                return back()->withErrors(['compra' => 'El consecutivo fue tomado por otra operación. Recargue la pantalla y vuelva a registrar la compra.'])->withInput();
+            }
+
+            throw $e;
         }
 
         return redirect()->route('compras.show', $compra)->with('ok', 'Compra registrada.');
@@ -71,7 +79,55 @@ class PurchaseController extends Controller
 
     public function show(Compra $compra)
     {
-        return view('compras.show', ['compra' => $compra->load('proveedor', 'detalles.producto', 'detalles.lote', 'usuario', 'pagos.cuota', 'cuotas.pagos')]);
+        return view('compras.show', ['compra' => $compra->load('proveedor', 'detalles.producto', 'detalles.lote', 'gastos', 'usuario', 'auditorias.usuario', 'pagos.cuota', 'cuotas.pagos')]);
+    }
+
+    public function anular(Request $request, Compra $compra, PurchaseService $service)
+    {
+        $before = $compra->only(['estado']);
+        try {
+            $service->anular($compra, $request->user()->id);
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['compra' => $e->getMessage()]);
+        }
+
+        app(AuditLogService::class)->record(
+            $request,
+            'anulo',
+            'compras',
+            $compra,
+            $before,
+            $compra->fresh()->only(['estado']),
+            'Anulacion de compra y retiro de stock ingresado'
+        );
+
+        return back()->with('ok', 'Compra anulada y stock retirado del inventario.');
+    }
+
+    public function destroy(Request $request, Compra $compra, PurchaseService $service)
+    {
+        $request->validate(['totp_code' => ['required', 'string', 'max:32']]);
+        if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'compras', $compra, 'Intento de eliminar definitivamente una compra')) {
+            return back()->withErrors(['totp_code' => $error]);
+        }
+
+        try {
+            $before = $service->eliminarDefinitivamente($compra);
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['compra' => $e->getMessage()]);
+        }
+
+        app(AuditLogService::class)->record(
+            $request,
+            'elimino_definitivamente',
+            'compras',
+            $compra,
+            $before,
+            null,
+            'Eliminacion definitiva de compra y reconstruccion de inventario.'
+        );
+
+        return redirect()->route('compras.index')->with('ok', 'Compra eliminada definitivamente.');
     }
 
     public function storePayment(Request $request, Compra $compra, AuditLogService $audit)
@@ -146,17 +202,13 @@ class PurchaseController extends Controller
 
     public function editHistory(Compra $compra)
     {
-        return view('compras.edit-history', [
-            'compra' => $compra->load('proveedor'),
-            'proveedores' => Proveedor::where('activo', true)->orderBy('nombre')->get(),
-        ]);
+        return $this->editProducts($compra, false);
     }
 
     public function updateHistory(Request $request, Compra $compra)
     {
         $data = $request->validate([
-            'totp_code' => ['required', 'string', 'max:32'],
-            'nombre_comercial' => ['nullable', 'string', 'max:255'],
+            'nombre_comercial' => ['required', 'in:San Benjamin,Supra Medic'],
             'tipo_documento' => ['nullable', 'in:factura,nota_entrega'],
             'proveedor_id' => ['nullable', 'exists:proveedores,id'],
             'fecha' => ['required', 'date'],
@@ -165,12 +217,7 @@ class PurchaseController extends Controller
             'observacion' => ['nullable', 'string'],
         ]);
 
-        if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorizeAnyUser($request, 'compras', $compra, 'Intento de editar historial de compra')) {
-            return back()->withErrors(['totp_code' => $error])->withInput();
-        }
-
         $before = $compra->only(['nombre_comercial', 'tipo_documento', 'proveedor_id', 'fecha', 'factura', 'nit_proveedor', 'observacion']);
-        unset($data['totp_code']);
         $compra->update($data);
         app(AuditLogService::class)->record(
             $request,
@@ -183,6 +230,71 @@ class PurchaseController extends Controller
         );
 
         return redirect()->route('compras.show', $compra)->with('ok', 'Cabecera de compra actualizada sin modificar inventario.');
+    }
+
+    public function editProducts(Compra $compra, bool $enforced = true)
+    {
+        $puedeEditarProductos = $compra->estado === 'registrada'
+            && ! $compra->pagos()->where('estado', 'registrado')->exists()
+            && ! $compra->cuotas()->exists();
+        if ($enforced) {
+            abort_unless($compra->estado === 'registrada', 422, 'Solo se pueden editar compras registradas.');
+            abort_unless($puedeEditarProductos, 422, 'Regularice los pagos o cuotas antes de editar los productos.');
+        }
+
+        $productos = Producto::where('activo', true)->orderBy('nombre')->get();
+
+        $compra->load('detalles.producto', 'detalles.lote');
+        $itemsEditor = $compra->detalles->map(fn ($detalle) => [
+            'producto_id' => $detalle->producto_id,
+            'cantidad' => $detalle->cantidad,
+            'costo_unitario' => $detalle->costo_unitario,
+            'porcentaje_utilidad' => $detalle->porcentaje_utilidad,
+            'descuento_fijo' => $detalle->descuento_fijo,
+            'impuesto' => $detalle->impuesto,
+            'tipo_lote' => $detalle->fecha_vencimiento ? 'con_lote' : ($detalle->codigo_lote ? 'sin_vencimiento' : 'sin_lote'),
+            'codigo_lote' => $detalle->codigo_lote,
+            'fecha_vencimiento' => $detalle->fecha_vencimiento?->format('Y-m-d'),
+        ])->values()->all();
+
+        return view('compras.edit-products', [
+            'compra' => $compra,
+            'proveedores' => Proveedor::where('activo', true)->orderBy('nombre')->get(),
+            'puedeEditarProductos' => $puedeEditarProductos,
+            'productos' => $productos,
+            'productosEditor' => $productos->map(fn ($producto) => [
+                'id' => $producto->id,
+                'codigo' => $producto->codigo,
+                'nombre' => $producto->nombre,
+            ])->values(),
+            'itemsEditor' => $itemsEditor,
+        ]);
+    }
+
+    public function updateProducts(Request $request, Compra $compra, PurchaseService $service)
+    {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.producto_id' => ['required', 'exists:productos,id'],
+            'items.*.cantidad' => ['required', 'numeric', 'min:0'],
+            'items.*.costo_unitario' => ['required', 'numeric', 'min:0'],
+            'items.*.porcentaje_utilidad' => ['required', 'numeric', 'min:25', 'max:30'],
+            'items.*.descuento_fijo' => ['nullable', 'numeric', 'min:0'],
+            'items.*.impuesto' => ['nullable', 'numeric', 'min:0'],
+            'items.*.tipo_lote' => ['nullable', 'in:con_lote,sin_vencimiento,sin_lote'],
+            'items.*.codigo_lote' => ['nullable', 'string', 'max:255'],
+            'items.*.fecha_vencimiento' => ['nullable', 'date'],
+        ]);
+
+        try {
+            $before = $compra->load('detalles')->toArray();
+            $service->actualizarProductos($compra, $data['items'], $request->user()->id);
+            app(AuditLogService::class)->record($request, 'actualizo_productos', 'compras', $compra, $before, $compra->fresh('detalles')->toArray(), 'Edición de productos, cantidades e inventario de la compra');
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['items' => $e->getMessage()])->withInput();
+        }
+
+        return redirect()->route('compras.show', $compra)->with('ok', 'Productos de la compra actualizados correctamente.');
     }
 
     public function recibo(Compra $compra)
@@ -202,7 +314,7 @@ class PurchaseController extends Controller
     private function receiptData(Compra $compra): array
     {
         return [
-            'compra' => $compra->load('proveedor', 'detalles.producto', 'usuario'),
+            'compra' => $compra->load('proveedor', 'detalles.producto', 'gastos', 'usuario'),
             'empresa' => ConfiguracionEmpresa::firstOrCreate([]),
         ];
     }

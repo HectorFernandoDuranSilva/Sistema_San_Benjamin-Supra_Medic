@@ -25,6 +25,7 @@ class Producto extends Model
         'costo_referencial',
         'stock_minimo',
         'activo',
+        'maneja_lote_universal',
     ];
 
     protected function casts(): array
@@ -40,6 +41,7 @@ class Producto extends Model
             'porcentaje_utilidad' => 'decimal:2',
             'stock_minimo' => 'decimal:2',
             'activo' => 'boolean',
+            'maneja_lote_universal' => 'boolean',
         ];
     }
 
@@ -76,8 +78,11 @@ class Producto extends Model
 
     public function getStockActualAttribute(): float
     {
+        // The movement ledger is the source of truth because a product may
+        // combine lot-managed purchases with purchases recorded without a lot.
+        // Summing only lots makes those no-lot entries disappear from stock.
         $ultimo = $this->movimientos()->latest('fecha_movimiento')->latest('id')->first();
 
-        return (float) ($ultimo?->stock_nuevo ?? 0);
+        return round((float) ($ultimo?->stock_nuevo ?? 0), 2);
     }
 }

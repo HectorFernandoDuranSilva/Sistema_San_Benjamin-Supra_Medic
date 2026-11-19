@@ -9,6 +9,7 @@
         @endif
         @if(auth()->user()->hasPermission('notas_facturas'))
             <a class="btn secondary" href="{{ route('notas-facturas.cobros') }}">Cuentas por cobrar</a>
+            <a class="btn secondary" href="{{ route('reportes.gastos-operativos') }}">Gastos operativos</a>
         @endif
         <a class="btn secondary" href="{{ route('reportes.documentos.pdf', request()->query()) }}">Descargar PDF</a>
         <a class="btn secondary" href="{{ route('reportes.documentos.excel', request()->query()) }}">Descargar Excel</a>
@@ -51,14 +52,6 @@
     <button class="btn secondary">Guardar reporte actual</button>
 </form>
 
-<div class="grid cols-4" style="margin-bottom:16px;">
-    <div class="metric"><span>Ventas facturadas</span><strong>Bs {{ number_format($totales['ventas_facturadas'], 2) }}</strong></div>
-    <div class="metric"><span>Compras facturadas</span><strong>Bs {{ number_format($totales['compras_facturadas'], 2) }}</strong></div>
-    <div class="metric"><span>IVA 13%</span><strong>Bs {{ number_format($totales['iva_estimado'], 2) }}</strong></div>
-    <div class="metric"><span>IT 3%</span><strong>Bs {{ number_format($totales['it_estimado'], 2) }}</strong></div>
-    <div class="metric"><span>Por pagar</span><strong @style(['color:#b42318;font-weight:800' => $totales['por_pagar'] < 0])>Bs {{ number_format($totales['por_pagar'], 2) }}</strong></div>
-</div>
-
 <div class="grid cols-2">
     <div class="card">
         <h2>Resumen de documentos emitidos</h2>
@@ -84,9 +77,10 @@
     </div>
 </div>
 
-<section id="notas-entrega" style="margin-top:24px;">
+<section id="notas-entrega" class="card" style="margin-top:24px;">
     <div class="top">
-        <h2>Notas de entrega</h2>
+        <div><h2>Notas de entrega</h2><p class="muted" style="margin:4px 0 0;">Total de notas: <strong>Bs {{ number_format($totales['notas_entrega'], 2) }}</strong>. Este importe no se integra al balance mensual.</p></div>
+        <a class="btn secondary" href="{{ route('reportes.notas-entrega.pdf', request()->query()) }}">PDF de notas</a>
         @if(auth()->user()->hasPermission('ventas'))
             <a class="btn" href="{{ route('notas.create') }}">Crear nota de entrega</a>
         @endif

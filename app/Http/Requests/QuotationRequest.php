@@ -18,7 +18,7 @@ class QuotationRequest extends FormRequest
             'numero_cotizacion' => ['nullable', 'string', 'max:255', Rule::unique('cotizaciones', 'numero_cotizacion')->ignore($this->route('cotizacion'))],
             'revision' => [$this->route('cotizacion') ? 'required' : 'nullable', 'integer', 'min:1'],
             'items.*.id' => ['nullable', 'integer'],
-            'nombre_comercial' => ['nullable', 'string', 'max:255'],
+            'nombre_comercial' => ['required', 'in:San Benjamin,Supra Medic'],
             'cliente_id' => ['nullable', 'exists:clientes,id'],
             'fecha' => ['required', 'date'],
             'valida_hasta' => ['nullable', 'date', 'after_or_equal:fecha'],

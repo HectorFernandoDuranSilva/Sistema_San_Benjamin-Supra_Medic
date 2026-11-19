@@ -105,4 +105,29 @@ class QuotationEditingTest extends TestCase
         $this->actingAs($u)->post(route('cotizaciones.store'), $data)->assertSessionHasErrors('cotizacion');
         $this->assertDatabaseCount('cotizaciones', 0);
     }
+
+    public function test_selected_commercial_name_is_saved_even_when_dashboard_context_is_different(): void
+    {
+        $user = User::factory()->create(['role' => 'administrador', 'activo' => true]);
+        $product = Producto::create(['codigo' => 'Q-CONTEXT', 'nombre' => 'Reactivo', 'activo' => true]);
+        $data = $this->data($product);
+
+        $this->withSession(['commercial_context' => ['name' => 'San Benjamin']])
+            ->actingAs($user)
+            ->post(route('cotizaciones.store'), $data)
+            ->assertSessionHasNoErrors();
+
+        $quote = \App\Models\Cotizacion::firstOrFail();
+        $this->assertSame('Supra Medic', $quote->nombre_comercial);
+
+        $data['nombre_comercial'] = 'San Benjamin';
+        $data['revision'] = 1;
+        $data['items'][0]['id'] = $quote->detalles()->value('id');
+        $this->withSession(['commercial_context' => ['name' => 'Supra Medic']])
+            ->actingAs($user)
+            ->put(route('cotizaciones.update', $quote), $data)
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('San Benjamin', $quote->fresh()->nombre_comercial);
+    }
 }

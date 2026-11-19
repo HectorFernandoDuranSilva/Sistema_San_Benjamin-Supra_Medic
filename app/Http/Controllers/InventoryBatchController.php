@@ -46,6 +46,14 @@ class InventoryBatchController extends Controller
             ->paginate(25)
             ->withQueryString();
 
+        $lotes->getCollection()->transform(function (InventarioLote $lote): InventarioLote {
+            $consumidoReal = (float) ($lote->cantidad_consumida ?? 0);
+            $lote->cantidad_consumida_real = $consumidoReal;
+            $lote->cantidad_consumida = round($consumidoReal + (float) ($lote->cantidad_consumida_ajustada ?? 0), 2);
+
+            return $lote;
+        });
+
         return view('inventario.lotes', [
             'lotes' => $lotes,
             'productos' => Producto::where('activo', true)->orderBy('nombre')->get(),
@@ -55,43 +63,144 @@ class InventoryBatchController extends Controller
 
     public function update(Request $request, InventarioLote $lote)
     {
-        $cantidadConsumida = (float) $lote->consumos()->sum('cantidad');
-        $maxDisponible = max(0, round((float) $lote->cantidad_inicial - $cantidadConsumida, 2));
-
         $data = $request->validate([
-            'totp_code' => ['required', 'string', 'max:32'],
             'codigo_lote' => ['nullable', 'string', 'max:255'],
             'fecha_vencimiento' => ['nullable', 'date'],
-            'cantidad_disponible' => ['required', 'numeric', 'min:0', 'max:' . $maxDisponible],
+            'cantidad_inicial' => ['required', 'numeric', 'min:0'],
+            'cantidad_consumida' => ['required', 'numeric', 'min:0'],
+            'cantidad_disponible' => ['required', 'numeric', 'min:0'],
             'estado' => ['required', 'in:activo,inactivo'],
             'observacion' => ['nullable', 'string'],
         ]);
 
-        if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'lotes', $lote, 'Intento de editar lote')) {
-            return back()->withErrors(['totp_code' => $error]);
+        $cantidadInicial = round((float) $data['cantidad_inicial'], 2);
+        $cantidadConsumida = round((float) $data['cantidad_consumida'], 2);
+        $cantidadDisponible = round((float) $data['cantidad_disponible'], 2);
+        $disponibleCalculada = round($cantidadInicial - $cantidadConsumida, 2);
+
+        if (abs($disponibleCalculada - $cantidadDisponible) > 0.01) {
+            return back()->withErrors(['cantidad_disponible' => 'Inicial - consumido debe coincidir con disponible.'])->withInput();
         }
 
-        $before = $lote->only(['codigo_lote', 'fecha_vencimiento', 'cantidad_disponible', 'estado', 'observacion']);
-        unset($data['totp_code']);
-        $lote->update($data);
-        $lote->detalleCompra?->update([
-            'codigo_lote' => $data['codigo_lote'] ?? null,
-            'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
-        ]);
-        $lote->consumos()->update([
-            'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
-        ]);
-        app(AuditLogService::class)->record(
-            $request,
-            'actualizo',
-            'lotes',
-            $lote,
-            $before,
-            $lote->only(array_keys($before)),
-            'Edicion protegida de lote y vencimiento'
-        );
+        $before = $lote->only(['codigo_lote', 'fecha_vencimiento', 'cantidad_inicial', 'cantidad_disponible', 'cantidad_consumida_ajustada', 'estado', 'observacion']);
+        try {
+            DB::transaction(function () use ($request, $lote, $data, $before, $cantidadInicial, $cantidadConsumida, $cantidadDisponible): void {
+                $lote = InventarioLote::whereKey($lote->id)->lockForUpdate()->firstOrFail();
+                $cantidadConsumidaReal = (float) $lote->consumos()->sum('cantidad');
+                if ($cantidadConsumida + 0.0001 < $cantidadConsumidaReal) {
+                    throw new \InvalidArgumentException('El consumido no puede ser menor al consumo histórico real del lote.');
+                }
+                $diferenciaStock = round($cantidadDisponible - (float) $lote->cantidad_disponible, 2);
+
+                if ($diferenciaStock > 0) {
+                    $this->inventory->registrarMovimiento(
+                        $lote->producto,
+                        'ajuste_positivo',
+                        $diferenciaStock,
+                        'lote',
+                        $lote->id,
+                        $request->user()->id,
+                        'Ajuste de saldo de lote'
+                    );
+                } elseif ($diferenciaStock < 0) {
+                    $this->inventory->registrarMovimiento(
+                        $lote->producto,
+                        'ajuste_negativo',
+                        abs($diferenciaStock),
+                        'lote',
+                        $lote->id,
+                        $request->user()->id,
+                        'Ajuste de saldo de lote'
+                    );
+                }
+
+                $update = collect($data)->except(['cantidad_inicial', 'cantidad_consumida', 'cantidad_disponible'])->all();
+                $update['cantidad_inicial'] = $cantidadInicial;
+                $update['cantidad_disponible'] = $cantidadDisponible;
+                $update['cantidad_consumida_ajustada'] = round($cantidadConsumida - $cantidadConsumidaReal, 2);
+                $lote->update($update);
+            $lote->detalleCompra?->update([
+                'codigo_lote' => $data['codigo_lote'] ?? null,
+                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+            ]);
+            $lote->consumos()->update([
+                'fecha_vencimiento' => $data['fecha_vencimiento'] ?? null,
+            ]);
+            $this->inventory->sincronizarStockDesdeLotes(
+                $lote->producto,
+                $request->user()->id,
+                'Saldo de producto reconciliado con lotes editados'
+            );
+            app(AuditLogService::class)->record(
+                $request,
+                'actualizo',
+                'lotes',
+                $lote,
+                $before,
+                $lote->fresh()->only(array_keys($before)),
+                'Edición de lote y vencimiento'
+            );
+            });
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['cantidad_disponible' => $e->getMessage()])->withInput();
+        }
 
         return back()->with('ok', 'Lote actualizado.');
+    }
+
+    public function darDeBajaVencido(Request $request, InventarioLote $lote)
+    {
+        $usuario = $request->user();
+
+        try {
+            DB::transaction(function () use ($request, $lote, $usuario): void {
+                $lote = InventarioLote::with('producto')
+                    ->whereKey($lote->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if (! $lote->fecha_vencimiento || ! $lote->fecha_vencimiento->lt(today())) {
+                    throw new \InvalidArgumentException('Solo se pueden dar de baja lotes ya vencidos.');
+                }
+
+                $cantidad = round((float) $lote->cantidad_disponible, 2);
+                if ($cantidad <= 0 || $lote->estado !== 'activo') {
+                    throw new \InvalidArgumentException('El lote no tiene existencia disponible para dar de baja.');
+                }
+
+                $before = $lote->only(['codigo_lote', 'fecha_vencimiento', 'cantidad_disponible', 'estado', 'observacion']);
+                $this->inventory->registrarMovimiento(
+                    $lote->producto,
+                    'ajuste_negativo',
+                    $cantidad,
+                    'lote_vencido',
+                    $lote->id,
+                    $usuario->id,
+                    'Baja de existencia por vencimiento'
+                );
+
+                $observacion = trim(($lote->observacion ? $lote->observacion . "\n" : '') . 'Baja por vencimiento: ' . now()->format('d/m/Y H:i'));
+                $lote->update([
+                    'cantidad_disponible' => 0,
+                    'estado' => 'inactivo',
+                    'observacion' => $observacion,
+                ]);
+
+                app(AuditLogService::class)->record(
+                    $request,
+                    'actualizo',
+                    'lotes',
+                    $lote,
+                    $before,
+                    $lote->fresh()->only(array_keys($before)),
+                    'Baja de lote vencido; existencia retirada del inventario.'
+                );
+            });
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['lote' => $e->getMessage()]);
+        }
+
+        return back()->with('ok', 'Lote vencido dado de baja y existencia retirada.');
     }
 
     public function destroy(Request $request, InventarioLote $lote)

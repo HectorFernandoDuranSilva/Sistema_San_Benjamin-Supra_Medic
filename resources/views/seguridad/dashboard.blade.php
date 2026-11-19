@@ -3,7 +3,7 @@
 @section('content')
 <div class="top">
     <div><h1>Visibilidad del dashboard</h1><p class="muted">Defina qué información puede ver cada usuario. Ocultar un elemento no elimina datos ni modifica cálculos.</p></div>
-    <a class="btn secondary" href="{{ route('seguridad.authenticator') }}">Google Authenticator</a>
+    <div class="actions"><a class="btn secondary" href="{{ route('seguridad.authenticator') }}">Google Authenticator</a><a class="btn secondary" href="{{ route('seguridad.auditoria') }}">Auditoría</a></div>
 </div>
 
 @foreach($usuarios as $usuario)

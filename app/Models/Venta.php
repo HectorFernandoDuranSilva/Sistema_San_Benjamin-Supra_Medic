@@ -26,6 +26,9 @@ class Venta extends Model
         'total',
         'estado',
         'observacion',
+        'tarjeta_magnetica',
+        'tipo_tarjeta',
+        'destinatario_tarjeta',
         'permitir_salida_sin_stock',
         'motivo_salida_sin_stock',
         'usuario_id',
@@ -43,6 +46,7 @@ class Venta extends Model
             'otros_costos_total' => 'decimal:2',
             'total' => 'decimal:2',
             'permitir_salida_sin_stock' => 'boolean',
+            'tarjeta_magnetica' => 'boolean',
         ];
     }
 

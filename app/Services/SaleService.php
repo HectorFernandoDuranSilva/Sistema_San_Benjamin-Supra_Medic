@@ -25,12 +25,18 @@ class SaleService
 
         return DB::transaction(function () use ($data, $items, $usuarioId) {
             $esNotaEntrega = ($data['tipo_documento'] ?? 'factura') === 'nota_entrega';
+            $modoStockPendiente = array_key_exists('modo_stock', $data)
+                ? ($data['modo_stock'] ?? null) === 'pendiente'
+                : ($esNotaEntrega || (bool) ($data['factura_stock_pendiente'] ?? false));
             $esFacturaStockPendiente = ! $esNotaEntrega
                 && ($data['tipo_documento'] ?? 'factura') === 'factura'
-                && (bool) ($data['factura_stock_pendiente'] ?? false);
+                && (
+                    $modoStockPendiente
+                    || (bool) ($data['permitir_salida_sin_stock'] ?? false)
+                );
             // Las notas de entrega pueden documentar una salida pendiente aunque
             // no exista stock disponible. Las facturas requieren confirmación explícita.
-            $permitirSalidaSinStock = $esNotaEntrega
+            $permitirSalidaSinStock = ($esNotaEntrega && ($modoStockPendiente || (bool) ($data['permitir_salida_sin_stock'] ?? false)))
                 || ($esFacturaStockPendiente && (bool) ($data['permitir_salida_sin_stock'] ?? false));
             $motivoSalidaSinStock = trim((string) ($data['motivo_salida_sin_stock'] ?? ''));
             if ($esFacturaStockPendiente && ! $permitirSalidaSinStock) {
@@ -52,12 +58,20 @@ class SaleService
             $otrosCostosTotal = 0;
             $total = 0;
             $descuentoPorcentaje = (float) ($data['descuento_porcentaje'] ?? 0);
-            $productos = Producto::whereIn('id', $items->pluck('producto_id'))->lockForUpdate()->get()->keyBy('id');
+            // C/T is a per-product decision. The line flags are authoritative;
+            // the header selector only provides a convenient default in the form.
+            $hayTarjeta = $items->contains(fn ($item) => (bool) ($item['tarjeta_magnetica'] ?? false));
+            $productos = Producto::whereIn('id', $items->pluck('producto_id'))
+                ->where('activo', true)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
 
             foreach ($items as $item) {
                 $producto = $productos->get((int) $item['producto_id']);
                 $cantidad = (float) $item['cantidad'];
                 $precio = (float) $item['precio_unitario'];
+                $esLoteManual = filled($item['codigo_lote_manual'] ?? null);
                 $lineaSubtotal = $cantidad * $precio;
                 $descuento = $this->lineAmount($item, 'descuento', round($lineaSubtotal * ($descuentoPorcentaje / 100), 2));
                 $impuesto = $this->lineAmount($item, 'impuesto');
@@ -65,8 +79,11 @@ class SaleService
                 $otrosCostos = $this->lineAmount($item, 'otros_costos');
                 $lineaTotal = max(0, $lineaSubtotal - $descuento) + $impuesto + $costoEnvio + $otrosCostos;
 
-                if (! $producto || $cantidad <= 0 || $precio < 0 || (! $esNotaEntrega && $precio <= 0) || $descuento < 0 || $impuesto < 0 || $costoEnvio < 0 || $otrosCostos < 0) {
+                if (! $producto || $cantidad <= 0 || $precio < 0 || $descuento < 0 || $impuesto < 0 || $costoEnvio < 0 || $otrosCostos < 0) {
                     throw new InvalidArgumentException('Detalle de venta inválido: revise cantidad, precio y montos.');
+                }
+                if ($descuento > round($lineaSubtotal, 2) + 0.0001) {
+                    throw new InvalidArgumentException("El descuento no puede superar el subtotal de {$producto->codigo} - {$producto->nombre}.");
                 }
 
                 if ($this->inventory->stockDisponibleParaVenta($producto) < $cantidad && ! $permitirSalidaSinStock) {
@@ -99,6 +116,9 @@ class SaleService
                 'total' => max(0, $total),
                 'estado' => 'registrada',
                 'observacion' => $data['observacion'] ?? null,
+                'tarjeta_magnetica' => $hayTarjeta,
+                'tipo_tarjeta' => $hayTarjeta ? ($data['tipo_tarjeta'] ?? null) : null,
+                'destinatario_tarjeta' => $hayTarjeta ? ($data['destinatario_tarjeta'] ?? null) : null,
                 'permitir_salida_sin_stock' => $permitirSalidaSinStock,
                 'motivo_salida_sin_stock' => $permitirSalidaSinStock ? $motivoSalidaSinStock : null,
                 'usuario_id' => $usuarioId,
@@ -117,12 +137,21 @@ class SaleService
                 $impuesto = $this->lineAmount($item, 'impuesto');
                 $costoEnvio = $this->lineAmount($item, 'costo_envio');
                 $otrosCostos = $this->lineAmount($item, 'otros_costos');
+                $esLoteManual = filled($item['codigo_lote_manual'] ?? null);
+                $stockDisponibleAntes = $this->inventory->stockDisponibleParaVenta($producto);
+                $faltanteStock = $permitirSalidaSinStock
+                    ? max(0, round($cantidad - $stockDisponibleAntes, 2))
+                    : 0;
 
                 $detalle = $venta->detalles()->create([
                     'producto_id' => $producto->id,
                     'codigo_producto' => $producto->codigo,
                     'nombre_producto' => $producto->nombre,
+                    'tarjeta_magnetica' => (bool) ($item['tarjeta_magnetica'] ?? false),
                     'cantidad' => $cantidad,
+                    'faltante_stock' => $faltanteStock,
+                    'codigo_lote_manual' => trim((string) ($item['codigo_lote_manual'] ?? '')) ?: null,
+                    'fecha_vencimiento_manual' => $item['fecha_vencimiento_manual'] ?? ($item['fecha_vencimiento'] ?? null),
                     'precio_unitario' => $precio,
                     'subtotal' => $lineaSubtotal,
                     'descuento' => $descuento,
@@ -132,16 +161,30 @@ class SaleService
                     'total' => max(0, $lineaSubtotal - $descuento) + $impuesto + $costoEnvio + $otrosCostos,
                 ]);
 
+                $loteSeleccionado = ! empty($item['codigo_lote_manual'])
+                    ? null
+                    : (! empty($item['inventario_lote_id']) ? (int) $item['inventario_lote_id'] : null);
                 $pendienteLotes = $this->inventory->consumirLotesPorVencimiento(
                     $producto,
                     $detalle,
                     $cantidad,
-                    ! empty($item['inventario_lote_id']) ? (int) $item['inventario_lote_id'] : null,
+                    $loteSeleccionado,
                     $item['fecha_vencimiento'] ?? null,
-                    $permitirSalidaSinStock
+                    $permitirSalidaSinStock || $esLoteManual,
+                    $esLoteManual
                 );
-                if ($pendienteLotes > 0 && ! $permitirSalidaSinStock) {
+                if ($pendienteLotes > 0 && ! $permitirSalidaSinStock && ! $esLoteManual) {
                     throw new InvalidArgumentException("No hay lotes vigentes suficientes para {$producto->codigo} - {$producto->nombre}.");
+                }
+                if ($esLoteManual) {
+                    $this->inventory->registrarLoteManualDeVenta(
+                        $producto,
+                        $cantidad,
+                        $item['fecha_vencimiento_manual'] ?? ($item['fecha_vencimiento'] ?? null),
+                        (string) $item['codigo_lote_manual'],
+                        $usuarioId,
+                        $permitirSalidaSinStock
+                    );
                 }
                 $this->inventory->registrarMovimiento(
                     $producto,
@@ -159,6 +202,128 @@ class SaleService
             }
 
             return $venta->load('detalles', 'cliente', 'usuario', 'cuotas');
+        });
+    }
+
+    public function actualizarProductos(Venta $venta, array $items, int $usuarioId): Venta
+    {
+        $items = collect($items)->filter(fn ($item) => ! empty($item['producto_id']))->values();
+        if ($items->isEmpty()) {
+            throw new InvalidArgumentException('La venta debe conservar al menos un producto.');
+        }
+
+        return DB::transaction(function () use ($venta, $items, $usuarioId): Venta {
+            $venta = Venta::whereKey($venta->id)->lockForUpdate()->firstOrFail();
+            if ($venta->estado !== 'registrada') {
+                throw new InvalidArgumentException('Solo se pueden editar documentos registrados.');
+            }
+            if ($venta->cobros()->where('estado', 'registrado')->exists()) {
+                throw new InvalidArgumentException('No se puede editar una venta con cobros registrados. Regularice los cobros primero.');
+            }
+            if ($venta->cuotas()->exists()) {
+                throw new InvalidArgumentException('No se puede editar una venta que ya tiene cuotas.');
+            }
+
+            $venta->load('detalles.producto', 'detalles.lotes.lote');
+            $cantidadesAnteriores = $venta->detalles
+                ->groupBy('producto_id')
+                ->map(fn ($detalles) => (float) $detalles->sum('cantidad'));
+            $cantidadesNuevas = $items->groupBy('producto_id')->map(fn ($detalles) => (float) $detalles->sum('cantidad'));
+            $productos = Producto::whereIn('id', $items->pluck('producto_id'))
+                ->where('activo', true)->lockForUpdate()->get()->keyBy('id');
+            $subtotal = $descuentoTotal = $impuestoTotal = $envioTotal = $otrosTotal = $total = 0.0;
+            $descuentoPorcentaje = (float) ($venta->descuento_porcentaje ?? 0);
+
+            foreach ($items as $item) {
+                $producto = $productos->get((int) $item['producto_id']);
+                $cantidad = (float) ($item['cantidad'] ?? 0);
+                $precio = (float) ($item['precio_unitario'] ?? 0);
+                $lineaSubtotal = round($cantidad * $precio, 2);
+                $descuento = $this->lineAmount($item, 'descuento', round($lineaSubtotal * ($descuentoPorcentaje / 100), 2));
+                $impuesto = $this->lineAmount($item, 'impuesto');
+                $envio = $this->lineAmount($item, 'costo_envio');
+                $otros = $this->lineAmount($item, 'otros_costos');
+                if (! $producto || $cantidad <= 0 || $precio < 0 || $descuento < 0 || $impuesto < 0 || $envio < 0 || $otros < 0 || $descuento > $lineaSubtotal + 0.0001) {
+                    throw new InvalidArgumentException('Detalle de venta inválido: revise producto, cantidad, precio y montos.');
+                }
+                $stockDisponibleConDevolucion = $this->inventory->stockDisponibleParaVenta($producto) + (float) $cantidadesAnteriores->get($producto->id, 0);
+                if ($stockDisponibleConDevolucion < (float) $cantidadesNuevas->get($producto->id, $cantidad) && ! $venta->permitir_salida_sin_stock) {
+                    throw new InvalidArgumentException("Stock vigente insuficiente para {$producto->codigo} - {$producto->nombre}.");
+                }
+                $subtotal += $lineaSubtotal;
+                $descuentoTotal += $descuento;
+                $impuestoTotal += $impuesto;
+                $envioTotal += $envio;
+                $otrosTotal += $otros;
+                $total += max(0, $lineaSubtotal - $descuento) + $impuesto + $envio + $otros;
+            }
+
+            $productosAnteriores = $venta->detalles->pluck('producto_id')->unique()->filter()->values();
+            foreach ($venta->detalles as $detalle) {
+                $this->inventory->devolverLotesDeVenta($detalle);
+            }
+            MovimientoInventario::where('referencia_tipo', 'venta')->where('referencia_id', $venta->id)->delete();
+            $venta->detalles()->delete();
+            foreach ($productosAnteriores as $productoId) {
+                $this->recalcularMovimientosProducto((int) $productoId);
+            }
+
+            $hayTarjeta = $items->contains(fn ($item) => (bool) ($item['tarjeta_magnetica'] ?? false));
+            foreach ($items as $item) {
+                $producto = $productos->get((int) $item['producto_id']);
+                $cantidad = (float) $item['cantidad'];
+                $precio = (float) $item['precio_unitario'];
+                $lineaSubtotal = round($cantidad * $precio, 2);
+                $descuento = $this->lineAmount($item, 'descuento', round($lineaSubtotal * ($descuentoPorcentaje / 100), 2));
+                $impuesto = $this->lineAmount($item, 'impuesto');
+                $envio = $this->lineAmount($item, 'costo_envio');
+                $otros = $this->lineAmount($item, 'otros_costos');
+                $manual = trim((string) ($item['codigo_lote_manual'] ?? '')) ?: null;
+                $stockAntes = $this->inventory->stockDisponibleParaVenta($producto);
+                $detalle = $venta->detalles()->create([
+                    'producto_id' => $producto->id,
+                    'codigo_producto' => $producto->codigo,
+                    'nombre_producto' => $producto->nombre,
+                    'tarjeta_magnetica' => (bool) ($item['tarjeta_magnetica'] ?? false),
+                    'cantidad' => $cantidad,
+                    'faltante_stock' => $venta->permitir_salida_sin_stock ? max(0, round($cantidad - $stockAntes, 2)) : 0,
+                    'codigo_lote_manual' => $manual,
+                    'fecha_vencimiento_manual' => $item['fecha_vencimiento_manual'] ?? null,
+                    'precio_unitario' => $precio,
+                    'subtotal' => $lineaSubtotal,
+                    'descuento' => $descuento,
+                    'impuesto' => $impuesto,
+                    'costo_envio' => $envio,
+                    'otros_costos' => $otros,
+                    'total' => max(0, $lineaSubtotal - $descuento) + $impuesto + $envio + $otros,
+                ]);
+                $pendiente = $this->inventory->consumirLotesPorVencimiento(
+                    $producto, $detalle, $cantidad,
+                    $manual ? null : (($item['inventario_lote_id'] ?? null) ?: null),
+                    $item['fecha_vencimiento'] ?? null,
+                    (bool) $venta->permitir_salida_sin_stock || (bool) $manual,
+                    (bool) $manual
+                );
+                if ($pendiente > 0 && ! $venta->permitir_salida_sin_stock && ! $manual) {
+                    throw new InvalidArgumentException("No hay lotes vigentes suficientes para {$producto->codigo} - {$producto->nombre}.");
+                }
+                if ($manual) {
+                    $this->inventory->registrarLoteManualDeVenta($producto, $cantidad, $item['fecha_vencimiento_manual'] ?? null, $manual, $usuarioId, (bool) $venta->permitir_salida_sin_stock);
+                }
+                $this->inventory->registrarMovimiento($producto, 'salida', $cantidad, 'venta', $venta->id, $usuarioId, $venta->permitir_salida_sin_stock ? 'Salida por edición con stock pendiente' : 'Salida por edición de venta', null, (bool) $venta->permitir_salida_sin_stock);
+            }
+
+            return $venta->update([
+                'subtotal' => $subtotal,
+                'descuento' => $descuentoTotal,
+                'impuesto_total' => $impuestoTotal,
+                'costo_envio_total' => $envioTotal,
+                'otros_costos_total' => $otrosTotal,
+                'total' => max(0, $total),
+                'tarjeta_magnetica' => $hayTarjeta,
+                'tipo_tarjeta' => $hayTarjeta ? $venta->tipo_tarjeta : null,
+                'destinatario_tarjeta' => $hayTarjeta ? $venta->destinatario_tarjeta : null,
+            ]) ? $venta->fresh('detalles') : $venta;
         });
     }
 

@@ -56,6 +56,8 @@
     .detail-header th,
     .batch-header th { background: {{ $brandColor }}; border: 1px solid #000; font-size: 9px; font-weight: 700; text-align: center; height: 13px; }
     .detail td { border-left: 1px solid #000; border-right: 1px solid #000; height: 11px; font-size: 8px; line-height: 1.0; white-space: nowrap; overflow: hidden; }
+    .detail td.description,
+    .batch-table td.description { white-space: normal; overflow: visible; overflow-wrap: break-word; word-wrap: break-word; height: auto; }
     .detail-start td { border-top: 1px solid #000; }
     .detail-end td { border-bottom: 1px solid #000; }
     .batch-title { background: {{ $brandSoftColor }}; border-left: 1px solid #000; border-right: 1px solid #000; font-size: 9px; font-weight: 700; text-align: center; color: {{ $brandTitleColor }}; }
@@ -160,7 +162,7 @@
         @php $d = $detalles[$i] ?? null; @endphp
         <tr class="detail {{ $i === 0 ? 'detail-start' : '' }} {{ $i === 17 && $lotes->isEmpty() ? 'detail-end' : '' }}">
             <td class="center">{{ $d?->codigo_producto }}</td>
-            <td class="left">{{ $d?->nombre_producto }}</td>
+            <td class="left description">{{ $d?->nombre_producto }}</td>
             <td class="center">{{ $d?->producto?->medida }}</td>
             <td class="center">{{ $d ? $qty($d->cantidad) : '' }}</td>
             <td class="right">{{ $d ? $money($d->precio_unitario) : '' }}</td>
@@ -190,7 +192,7 @@
                         @php $lote = $lotes[$i] ?? null; @endphp
                         <tr>
                             <td class="center">{{ $lote['codigo_producto'] ?? '' }}</td>
-                            <td class="left">{{ $lote['producto'] ?? '' }}</td>
+                            <td class="left description">{{ $lote['producto'] ?? '' }}</td>
                             <td class="center">{{ $lote['lote'] ?? '' }}</td>
                             <td class="center">{{ $lote ? ($lote['vencimiento']?->format('d/m/Y') ?: 'Sin fecha') : '' }}</td>
                             <td class="center">{{ isset($lote['cantidad']) ? $qty($lote['cantidad']) : '' }}</td>

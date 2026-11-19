@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Cliente;
+use App\Services\AuditLogService;
 use Illuminate\Http\Request;
 
 class CustomerController extends Controller
@@ -42,12 +43,16 @@ class CustomerController extends Controller
         }
 
         if ($cliente->ventas()->exists()) {
+            $before = $cliente->only(['nombre', 'razon_social', 'documento', 'telefono', 'direccion', 'activo']);
             $cliente->update(['activo' => false]);
+            app(AuditLogService::class)->record($request, 'desactivo', 'clientes', $cliente, $before, $cliente->only(array_keys($before)), 'Cliente desactivado porque tiene ventas asociadas.');
 
             return back()->with('ok', 'Cliente desactivado porque tiene ventas asociadas.');
         }
 
+        $before = $cliente->only(['nombre', 'razon_social', 'documento', 'telefono', 'direccion', 'activo']);
         $cliente->delete();
+        app(AuditLogService::class)->record($request, 'elimino', 'clientes', $cliente, $before, null, 'Cliente eliminado definitivamente.');
 
         return back()->with('ok', 'Cliente eliminado.');
     }

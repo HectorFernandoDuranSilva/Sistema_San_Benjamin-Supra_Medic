@@ -49,6 +49,7 @@ class InventoryController extends Controller
             ->when($request->filled('producto_id'), fn ($query) => $query->where('producto_id', $request->producto_id))
             ->when($request->filled('tipo_movimiento'), fn ($query) => $query->where('tipo_movimiento', $request->tipo_movimiento))
             ->latest('fecha_movimiento')
+            ->latest('id')
             ->paginate(30)
             ->withQueryString();
 

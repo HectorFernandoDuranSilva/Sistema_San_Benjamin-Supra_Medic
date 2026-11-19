@@ -54,7 +54,18 @@ class QuotationController extends Controller
                 'medida' => $p->medida,
                 'marca' => $p->marca,
                 'procedencia' => $p->procedencia,
-                'lotes' => $p->lotes->map(fn ($l) => ['id' => $l->id, 'codigo' => $l->codigo_lote, 'vencimiento' => $l->fecha_vencimiento?->toDateString()])->values(),
+                'lotes' => $p->lotes
+                    ->groupBy(fn ($l) => mb_strtoupper(trim((string) ($l->codigo_lote ?: 'SIN LOTE'))) . '|' . ($l->fecha_vencimiento?->format('Y-m-d') ?: 'SIN FECHA'))
+                    ->map(function ($lotes) {
+                        $primero = $lotes->first();
+
+                        return [
+                            'id' => $primero->id,
+                            'codigo' => $primero->codigo_lote,
+                            'vencimiento' => $primero->fecha_vencimiento?->toDateString(),
+                            'disponible' => round((float) $lotes->sum('cantidad_disponible'), 2),
+                        ];
+                    })->values(),
                 'stock' => $p->stock_actual,
                 'price' => $p->precio_venta,
                 'cost' => $p->costo_promedio ?? $p->costo_referencial,

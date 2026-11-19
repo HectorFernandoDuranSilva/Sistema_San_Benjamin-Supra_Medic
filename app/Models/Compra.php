@@ -46,6 +46,11 @@ class Compra extends Model
         return $this->hasMany(DetalleCompra::class);
     }
 
+    public function gastos()
+    {
+        return $this->hasMany(CompraGasto::class)->orderBy('fecha')->orderBy('id');
+    }
+
     public function pagos()
     {
         return $this->hasMany(PagoCompra::class);
@@ -59,5 +64,12 @@ class Compra extends Model
     public function usuario()
     {
         return $this->belongsTo(User::class, 'usuario_id');
+    }
+
+    public function auditorias()
+    {
+        return $this->morphMany(AuditEvent::class, 'auditable')
+            ->where('accion', 'anulo')
+            ->latest();
     }
 }

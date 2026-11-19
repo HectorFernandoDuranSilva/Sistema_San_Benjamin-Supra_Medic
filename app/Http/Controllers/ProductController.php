@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ProductRequest;
 use App\Models\Categoria;
+use App\Models\DetalleVenta;
 use App\Models\Producto;
 use App\Models\TipoCambio;
 use App\Services\AuditLogService;
@@ -129,13 +130,20 @@ class ProductController extends Controller
             'categorias' => Categoria::orderBy('nombre')->get(),
             'tipoCambioActual' => $tipoCambioActual,
             'lotes' => collect(),
+            'nextCodigo' => $this->nextNumericCode(),
         ]);
     }
 
     public function store(ProductRequest $request)
     {
         DB::transaction(function () use ($request): void {
-            $producto = Producto::create($this->productData($request) + ['activo' => $request->boolean('activo', true)]);
+            $data = $this->productData($request);
+            $data['codigo'] = trim((string) ($data['codigo'] ?? '')) ?: $this->nextNumericCode();
+            while (Producto::where('codigo', $data['codigo'])->exists()) {
+                $data['codigo'] = (string) ((int) $data['codigo'] + 1);
+            }
+
+            $producto = Producto::create($data + ['activo' => $request->boolean('activo', true)]);
             $stockInicial = (float) $request->input('stock_inicial', 0);
 
             if ($stockInicial > 0) {
@@ -172,11 +180,18 @@ class ProductController extends Controller
         $rate = (float) (TipoCambio::where('estado', 'vigente')->latest('fecha')->latest('id')->value('valor') ?: TipoCambio::ultimoValor());
         $producto->setAttribute('costo_reposicion_actual', $this->pricing->replacementCost($producto, $rate));
         $producto->setAttribute('precio_sugerido_reposicion', $this->pricing->suggestedReplacementPrice($producto, $rate));
+        $faltanteDocumentos = (float) DetalleVenta::query()
+            ->where('producto_id', $producto->id)
+            ->where('faltante_stock', '>', 0)
+            ->whereHas('venta', fn ($query) => $query->where('estado', 'registrada'))
+            ->sum('faltante_stock');
+        $faltanteStock = max(abs(min(0, (float) $producto->stock_actual)), $faltanteDocumentos);
 
         return view('productos.show', [
             'producto' => $producto->load('categoria'),
             'lotes' => $this->productBatches($producto),
             'comprasHistoricas' => $producto->detalleCompras()->with('compra.proveedor')->latest('id')->paginate(15),
+            'faltanteStock' => $faltanteStock,
         ]);
     }
 
@@ -228,7 +243,7 @@ class ProductController extends Controller
 
     public function update(ProductRequest $request, Producto $producto)
     {
-        $before = $producto->only(['codigo', 'nombre', 'marca', 'procedencia', 'categoria_id', 'medida', 'ubicacion', 'moneda_costo', 'precio_ingreso_usd', 'tipo_cambio', 'porcentaje_utilidad', 'costo_referencial', 'precio_venta', 'stock_minimo', 'activo', 'descripcion']);
+        $before = $producto->only(['codigo', 'nombre', 'marca', 'procedencia', 'categoria_id', 'medida', 'ubicacion', 'moneda_costo', 'precio_ingreso_usd', 'tipo_cambio', 'porcentaje_utilidad', 'costo_referencial', 'precio_venta', 'stock_minimo', 'activo', 'maneja_lote_universal', 'descripcion']);
         $producto->update($this->productData($request) + ['activo' => $request->boolean('activo')]);
         app(AuditLogService::class)->record(
             $request,
@@ -246,7 +261,7 @@ class ProductController extends Controller
     public function storeBatch(Request $request, Producto $producto)
     {
         $data = $request->validate([
-            'cantidad' => ['required', 'numeric', 'gt:0'],
+            'cantidad' => ['required', 'numeric', 'gte:0'],
             'codigo_lote' => ['nullable', 'string', 'max:255'],
             'fecha_vencimiento' => ['nullable', 'date'],
             'costo_unitario' => ['nullable', 'numeric', 'min:0'],
@@ -257,16 +272,20 @@ class ProductController extends Controller
             $cantidad = (float) $data['cantidad'];
             $costoUnitario = (float) ($data['costo_unitario'] ?? $producto->costo_referencial ?? 0);
 
-            $this->inventory->registrarMovimiento(
-                $producto,
-                'entrada',
-                $cantidad,
-                'producto_lote',
-                $producto->id,
-                $request->user()->id,
-                $data['observacion'] ?? 'Entrada de lote desde producto',
-                $costoUnitario > 0 ? $costoUnitario : null
-            );
+            // A zero-quantity lot documents an existing lot without changing
+            // stock or creating a misleading Kardex movement.
+            if ($cantidad > 0) {
+                $this->inventory->registrarMovimiento(
+                    $producto,
+                    'entrada',
+                    $cantidad,
+                    'producto_lote',
+                    $producto->id,
+                    $request->user()->id,
+                    $data['observacion'] ?? 'Entrada de lote desde producto',
+                    $costoUnitario > 0 ? $costoUnitario : null
+                );
+            }
 
             $this->inventory->registrarLoteEntrada(
                 $producto,
@@ -281,7 +300,19 @@ class ProductController extends Controller
             );
         });
 
-        return redirect()->route('productos.show', $producto)->with('ok', 'Lote agregado al producto.');
+        app(AuditLogService::class)->record(
+            $request,
+            'creo',
+            'lotes',
+            null,
+            null,
+            ['producto_id' => $producto->id, 'codigo_lote' => $data['codigo_lote'] ?? null, 'cantidad' => (float) $data['cantidad']],
+            (float) $data['cantidad'] > 0 ? 'Lote agregado con entrada de inventario.' : 'Lote documentado sin existencias; no modificó el stock.'
+        );
+
+        return redirect()->route('productos.show', $producto)->with('ok', (float) $data['cantidad'] > 0
+            ? 'Lote agregado al producto.'
+            : 'Lote documentado con cantidad 0; el stock no fue modificado.');
     }
 
     public function regularizeShortage(Request $request, Producto $producto)
@@ -296,7 +327,17 @@ class ProductController extends Controller
                 $productoBloqueado = Producto::whereKey($producto->id)->lockForUpdate()->firstOrFail();
                 $stockActual = $productoBloqueado->stock_actual;
                 $cantidad = (float) $data['cantidad'];
-                $faltante = abs(min(0, $stockActual));
+                $detallesPendientes = DetalleVenta::query()
+                    ->where('producto_id', $productoBloqueado->id)
+                    ->where('faltante_stock', '>', 0)
+                    ->whereHas('venta', fn ($query) => $query->where('estado', 'registrada'))
+                    ->with('venta')
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
+                $faltanteProducto = abs(min(0, (float) $stockActual));
+                $faltanteDocumentos = (float) $detallesPendientes->sum('faltante_stock');
+                $faltante = max($faltanteProducto, $faltanteDocumentos);
 
                 if ($faltante <= 0) {
                     throw new InvalidArgumentException('Este producto no tiene un faltante pendiente de regularizar.');
@@ -324,6 +365,10 @@ class ProductController extends Controller
                     ['cantidad_regularizada' => $cantidad, 'stock_nuevo' => $stockActual + $cantidad],
                     'Regularización manual de faltante desde Productos'
                 );
+
+                // Reconcile the oldest registered documents first so the
+                // dashboard and each document stop showing covered units.
+                $this->inventory->aplicarEntradaAFaltantes($productoBloqueado, $cantidad);
             });
         } catch (InvalidArgumentException $e) {
             return back()->withErrors(['cantidad' => $e->getMessage()])->withInput();
@@ -341,7 +386,8 @@ class ProductController extends Controller
 
         $hasHistory = $producto->movimientos()->exists()
             || $producto->detalleVentas()->exists()
-            || $producto->detalleCompras()->exists();
+            || $producto->detalleCompras()->exists()
+            || $producto->lotes()->exists();
 
         if ($hasHistory) {
             $before = $producto->only(['codigo', 'nombre', 'activo']);
@@ -384,27 +430,47 @@ class ProductController extends Controller
             return $this->redirectAfterDeletion($request)->withErrors(['totp_code' => $error]);
         }
 
-        DB::transaction(function () use ($request, $producto): void {
+        $conservaHistorial = false;
+        DB::transaction(function () use ($request, $producto, &$conservaHistorial): void {
             $before = $producto->toArray();
-            $producto->movimientos()->delete();
-            $producto->detalleVentas()->delete();
-            $producto->detalleCompras()->delete();
-            // Remove batches after their sale/purchase references so the
-            // product cannot remain visible in the lots and expiry screen.
-            $producto->lotes()->delete();
-            $producto->delete();
+            $hasHistory = $producto->movimientos()->exists()
+                || $producto->detalleVentas()->exists()
+                || $producto->detalleCompras()->exists()
+                || $producto->lotes()->exists();
+
+            if ($hasHistory) {
+                $conservaHistorial = true;
+                // Preserve financial and inventory history. The product and
+                // its lots disappear from active screens without destroying
+                // the records needed by Kardex, documents and audit.
+                $producto->update(['activo' => false]);
+                $producto->lotes()->update([
+                    'estado' => 'inactivo',
+                    'cantidad_disponible' => 0,
+                ]);
+                $accion = 'desactivo_forzado';
+                $descripcion = 'Producto retirado de las pantallas activas; se conserva su historial con Google Authenticator';
+            } else {
+                $producto->lotes()->delete();
+                $producto->delete();
+                $accion = 'elimino_forzado';
+                $descripcion = 'Producto eliminado definitivamente sin historial relacionado con Google Authenticator';
+            }
+
             app(AuditLogService::class)->record(
                 $request,
-                'elimino_forzado',
+                $accion,
                 'productos',
                 $producto,
                 $before,
-                null,
-                'Producto eliminado definitivamente con Google Authenticator'
+                $hasHistory ? $producto->only(['codigo', 'nombre', 'activo']) : null,
+                $descripcion
             );
         });
 
-        return $this->redirectAfterDeletion($request)->with('ok', 'Producto eliminado definitivamente junto con sus referencias directas.');
+        return $this->redirectAfterDeletion($request)->with('ok', $conservaHistorial
+            ? 'Producto retirado de las pantallas activas; su historial se conserva.'
+            : 'Producto eliminado definitivamente.');
     }
 
     private function redirectAfterDeletion(Request $request): RedirectResponse
@@ -449,6 +515,19 @@ class ProductController extends Controller
         }
 
         return $data;
+    }
+
+    private function nextNumericCode(): string
+    {
+        $max = Producto::query()->pluck('codigo')->reduce(function (int $highest, $codigo): int {
+            $codigo = trim((string) $codigo);
+
+            // Los códigos correlativos del inventario llegan hasta seis dígitos;
+            // se excluyen identificadores de prueba o externos excesivamente largos.
+            return preg_match('/^\d{1,6}$/', $codigo) ? max($highest, (int) $codigo) : $highest;
+        }, 0);
+
+        return (string) ($max + 1);
     }
 
     private function productBatches(Producto $producto)

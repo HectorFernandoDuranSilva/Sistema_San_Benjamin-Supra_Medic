@@ -13,7 +13,11 @@ class DetalleVenta extends Model
         'producto_id',
         'codigo_producto',
         'nombre_producto',
+        'tarjeta_magnetica',
         'cantidad',
+        'faltante_stock',
+        'codigo_lote_manual',
+        'fecha_vencimiento_manual',
         'precio_unitario',
         'subtotal',
         'descuento',
@@ -27,6 +31,9 @@ class DetalleVenta extends Model
     {
         return [
             'cantidad' => 'decimal:2',
+            'tarjeta_magnetica' => 'boolean',
+            'faltante_stock' => 'decimal:2',
+            'fecha_vencimiento_manual' => 'date',
             'precio_unitario' => 'decimal:2',
             'subtotal' => 'decimal:2',
             'descuento' => 'decimal:2',
@@ -40,6 +47,11 @@ class DetalleVenta extends Model
     public function producto()
     {
         return $this->belongsTo(Producto::class);
+    }
+
+    public function venta()
+    {
+        return $this->belongsTo(Venta::class);
     }
 
     public function lotes()

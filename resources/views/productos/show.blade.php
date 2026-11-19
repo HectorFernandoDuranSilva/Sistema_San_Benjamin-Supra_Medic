@@ -17,8 +17,7 @@
     <div class="metric"><span>Precio venta</span><strong>Bs {{ number_format($producto->precio_venta, 2) }}</strong></div>
 </div>
 
-@if((float) $producto->stock_actual < 0)
-    @php($faltanteStock = abs((float) $producto->stock_actual))
+@if((float) $faltanteStock > 0)
     <section class="card" style="margin-bottom:20px;border-color:#f0a0a0;background:#fff8f8;">
         <div class="top" style="margin-bottom:10px;">
             <div>
@@ -37,7 +36,7 @@
     </section>
 @endif
 
-<section style="margin-bottom:20px;">
+<section class="card" style="margin-bottom:20px;">
     <h2>{{ $producto->nombre }}</h2>
     <dl>
         <dt>Marca</dt><dd>{{ $producto->marca ?: 'Pendiente de completar' }}</dd>
@@ -45,7 +44,7 @@
     </dl>
 </section>
 
-<section style="margin-bottom:20px;">
+<section class="card" style="margin-bottom:20px;">
     <h2>Costos y precios</h2>
     <table>
         <tr><th>Última compra registrada</th><th>Costo promedio</th><th>Valor del stock</th><th>Recargo sobre costo</th></tr>
@@ -70,7 +69,7 @@
     </div>
 </section>
 
-<section style="margin-bottom:20px;">
+<section class="card" style="margin-bottom:20px;">
     <h2>Histórico de compras del producto</h2>
     <table>
         <tr><th>Fecha de factura</th><th>Compra</th><th>Factura</th><th>Proveedor</th><th>Cantidad</th><th>Costo unitario</th><th>Importe</th></tr>

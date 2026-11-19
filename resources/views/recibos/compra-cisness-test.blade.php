@@ -16,8 +16,9 @@
     .page {
         position: relative;
         width: 612pt;
-        height: 0;
-        padding: 0;
+        min-height: 280pt;
+        height: auto;
+        padding: 0 0 20pt;
         overflow: visible;
     }
     .logo-box {
@@ -114,9 +115,10 @@
         padding-bottom: 1pt;
     }
     .items {
-        position: absolute;
+        position: relative;
         left: 28pt;
-        top: 115pt;
+        top: auto;
+        margin-top: 115pt;
         width: 516pt;
         border-collapse: collapse;
         table-layout: fixed;
@@ -143,6 +145,17 @@
         white-space: nowrap;
         overflow: hidden;
     }
+    .items td.description {
+        height: auto;
+        padding-top: 2pt;
+        padding-bottom: 2pt;
+        white-space: normal;
+        overflow: visible;
+        overflow-wrap: break-word;
+        word-wrap: break-word;
+    }
+    .items thead { display: table-header-group; }
+    .items tr { page-break-inside: avoid; }
     .items .center { text-align: center; }
     .items .right { text-align: right; }
     .items .bold { font-weight: 700; }
@@ -157,9 +170,10 @@
         text-align: right;
     }
     .signatures {
-        position: absolute;
+        position: relative;
         left: 52pt;
-        top: 241pt;
+        top: auto;
+        margin-top: 12pt;
         width: 245pt;
         color: #0b2b39;
         text-align: center;
@@ -180,9 +194,10 @@
         margin: 0 13pt;
     }
     .bottom-rule {
-        position: absolute;
+        position: relative;
         left: 29pt;
-        top: 263pt;
+        top: auto;
+        margin-top: 8pt;
         width: 516pt;
         border-top: 0.7pt solid #0b2b5e;
     }
@@ -201,7 +216,7 @@
     $brandLogo = ($isPdf ?? false) ? $brandLogoPath : $brandLogoAsset;
     $companyName = $brandName === 'Supra Medic' ? 'SUPRA MEDIC IMPORTACIONES' : 'SAN BENJAMIN S.R.L';
     $telefono = $empresa->telefono ?: '6442910 - 70328125 - 67632137';
-    $direccion = $empresa->direccion ?: 'CALLE GRAU N° 661';
+    $direccion = $empresa->direccion ?: 'CALLE GRAU Nï¿½ 661';
     $barrio = 'ZONA/BARRIO SANTA ANA - SUCRE';
     $money = fn ($value) => number_format((float) $value, 2, '.', ',');
     $qty = fn ($value) => rtrim(rtrim(number_format((float) $value, 2, '.', ''), '0'), '.');
@@ -219,7 +234,7 @@
     <div class="receipt-box">
         <div class="receipt-title">INGRESO</div>
         <div class="fact-row">Fact. <span>{{ $compra->factura ?: $compra->numero_compra }}</span></div>
-        <div class="number-row">N° <span>{{ $compra->id }}</span></div>
+        <div class="number-row">Nï¿½ <span>{{ $compra->id }}</span></div>
     </div>
 
     <table class="supplier-area">
@@ -250,6 +265,7 @@
             <col style="width: 41pt;">
             <col style="width: 54pt;">
         </colgroup>
+        <thead>
         <tr>
             <th>CODIGO</th>
             <th>DESCRIPCION</th>
@@ -261,6 +277,8 @@
             <th>IMPUESTO</th>
             <th>TOTAL</th>
         </tr>
+        </thead>
+        <tbody>
         @foreach($detalles as $detalle)
             @php
                 $detalleImpuesto = (float) ($detalle->impuesto ?? 0);
@@ -270,7 +288,7 @@
             @endphp
             <tr>
                 <td class="center">{{ $detalle->codigo_producto }}</td>
-                <td>{{ $detalle->nombre_producto }}</td>
+                <td class="description">{{ $detalle->nombre_producto }}</td>
                 <td class="center">{{ $detalle->producto?->medida ?: 'PIEZAS' }}</td>
                 <td class="center">{{ $qty($detalle->cantidad) }}</td>
                 <td class="right"><span class="money-currency">Bs</span><span class="money-value">{{ $money($detalle->costo_unitario) }}</span></td>
@@ -278,6 +296,19 @@
                 <td class="right"><span class="money-currency">Bs</span><span class="money-value">{{ $money($detalle->subtotal) }}</span></td>
                 <td class="right"><span class="money-currency">Bs</span><span class="money-value">{{ $detalleImpuesto > 0 ? $money($detalleImpuesto) : '-' }}</span></td>
                 <td class="right"><span class="money-currency">Bs</span><span class="money-value">{{ $money($detalleTotal) }}</span></td>
+            </tr>
+        @endforeach
+        @foreach($compra->gastos as $gasto)
+            <tr>
+                <td class="center">GASTO</td>
+                <td>{{ ucfirst($gasto->tipo) }}{{ $gasto->descripcion ? ' - '.$gasto->descripcion : '' }}{{ $gasto->documento_numero ? ' ('.$gasto->documento_numero.')' : '' }}</td>
+                <td class="center">-</td>
+                <td class="center">-</td>
+                <td class="right"><span class="money-currency">Bs</span><span class="money-value">{{ $money($gasto->importe) }}</span></td>
+                <td class="right">-</td>
+                <td class="right"><span class="money-currency">Bs</span><span class="money-value">{{ $money($gasto->importe) }}</span></td>
+                <td class="right">-</td>
+                <td class="right"><span class="money-currency">Bs</span><span class="money-value">{{ $money($gasto->importe) }}</span></td>
             </tr>
         @endforeach
         <tr>
@@ -289,6 +320,7 @@
             <td class="right bold"><span class="money-currency">Bs</span><span class="money-value">{{ (float) ($compra->impuesto_total ?? 0) > 0 ? $money($compra->impuesto_total) : '-' }}</span></td>
             <td class="right bold"><span class="money-currency">Bs</span><span class="money-value">{{ $money($compra->total) }}</span></td>
         </tr>
+        </tbody>
     </table>
 
     <div class="signatures">

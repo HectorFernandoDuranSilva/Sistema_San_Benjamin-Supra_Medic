@@ -14,6 +14,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SaleController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SecurityController;
+use App\Http\Controllers\AuditController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\UserManagementController;
 use Illuminate\Support\Facades\Route;
@@ -42,6 +43,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/seguridad/autenticador/confirmar', [SecurityController::class, 'confirm'])->name('seguridad.authenticator.confirmar');
         Route::post('/seguridad/autenticador/reiniciar', [SecurityController::class, 'restart'])->name('seguridad.authenticator.reiniciar');
         Route::get('/seguridad/dashboard', [SecurityController::class, 'dashboard'])->name('seguridad.dashboard');
+        Route::get('/seguridad/auditoria', [AuditController::class, 'index'])->name('seguridad.auditoria');
         Route::put('/seguridad/dashboard/{usuario}', [SecurityController::class, 'updateDashboard'])->name('seguridad.dashboard.update');
     });
 
@@ -49,6 +51,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/notas-facturas/cobros', [\App\Http\Controllers\CustomerHistoryController::class, 'receivables'])->middleware('permission:notas_facturas')->name('notas-facturas.cobros');
     Route::get('/historico-clientes/pdf', [\App\Http\Controllers\CustomerHistoryController::class, 'pdf'])->middleware('permission:reportes,historial_clientes')->name('clientes.historial.pdf');
     Route::post('/ventas/{venta}/cobros', [\App\Http\Controllers\CustomerHistoryController::class, 'storePayment'])->middleware('permission:ventas')->name('ventas.cobros.store');
+    Route::post('/clientes/cobros', [\App\Http\Controllers\CustomerHistoryController::class, 'storeCustomerPayment'])->middleware('permission:ventas')->name('clientes.cobros.store');
+    Route::post('/clientes/finiquitar', [\App\Http\Controllers\CustomerHistoryController::class, 'settleCustomerAccount'])->middleware('permission:ventas')->name('clientes.cobros.finiquitar');
     Route::post('/cobros/{cobro}/anular', [\App\Http\Controllers\CustomerHistoryController::class, 'cancelPayment'])->middleware('permission:ventas')->name('cobros.anular');
     Route::get('/seleccionar-nombre-comercial', [AuthController::class, 'showCommercialSelection'])->name('commercial.select');
     Route::post('/seleccionar-nombre-comercial', [AuthController::class, 'selectCommercial'])->name('commercial.select.store');
@@ -71,6 +75,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/inventario/ajustar', [InventoryController::class, 'ajustar'])->middleware('permission:inventario')->name('inventario.ajustar');
     Route::get('/inventario/lotes', [InventoryBatchController::class, 'index'])->middleware('permission:inventario')->name('inventario.lotes.index');
     Route::put('/inventario/lotes/{lote}', [InventoryBatchController::class, 'update'])->middleware('permission:inventario')->name('inventario.lotes.update');
+    Route::post('/inventario/lotes/{lote}/dar-de-baja-vencido', [InventoryBatchController::class, 'darDeBajaVencido'])->middleware('permission:inventario')->name('inventario.lotes.dar-de-baja-vencido');
     Route::delete('/inventario/lotes/{lote}', [InventoryBatchController::class, 'destroy'])->middleware('permission:inventario')->name('inventario.lotes.destroy');
 
     Route::resource('ventas', SaleController::class)->only(['index', 'create', 'store', 'show'])->middleware('permission:ventas');
@@ -79,7 +84,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/notas-facturas/notas/{venta}', [SaleController::class, 'show'])->middleware('permission:ventas')->name('notas.show');
     Route::get('/ventas/{venta}/editar-historial', [SaleController::class, 'editHistory'])->middleware('permission:ventas')->name('ventas.historial.edit');
     Route::put('/ventas/{venta}/editar-historial', [SaleController::class, 'updateHistory'])->middleware('permission:ventas')->name('ventas.historial.update');
+    Route::get('/ventas/{venta}/editar-productos', [SaleController::class, 'editProducts'])->middleware('permission:ventas')->name('ventas.productos.edit');
+    Route::put('/ventas/{venta}/editar-productos', [SaleController::class, 'updateProducts'])->middleware('permission:ventas')->name('ventas.productos.update');
     Route::post('/ventas/{venta}/anular', [SaleController::class, 'anular'])->middleware('permission:ventas')->name('ventas.anular');
+    Route::post('/ventas/{venta}/cerrar-stock-pendiente', [SaleController::class, 'cerrarStockPendiente'])->middleware('permission:ventas')->name('ventas.cerrar-stock-pendiente');
     Route::post('/ventas/{venta}/convertir-a-factura', [SaleController::class, 'convertirAFactura'])->middleware('permission:ventas')->name('ventas.convertir-factura');
     Route::delete('/ventas/{venta}', [SaleController::class, 'destroy'])->middleware('permission:ventas')->name('ventas.destroy');
     Route::get('/ventas/{venta}/recibo', [SaleController::class, 'recibo'])->middleware('permission:ventas')->name('ventas.recibo');
@@ -88,10 +96,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/ventas/{venta}/pdf-prueba-lotes', [SaleController::class, 'pdfLotesPrueba'])->middleware('permission:ventas')->name('ventas.pdf-lotes-prueba');
 
     Route::resource('compras', PurchaseController::class)->only(['index', 'create', 'store', 'show'])->middleware('permission:compras');
+    Route::post('/compras/{compra}/anular', [PurchaseController::class, 'anular'])->middleware('permission:compras')->name('compras.anular');
+    Route::delete('/compras/{compra}', [PurchaseController::class, 'destroy'])->middleware('permission:compras')->name('compras.destroy');
     Route::post('/compras/{compra}/pagos', [PurchaseController::class, 'storePayment'])->middleware('permission:compras')->name('compras.pagos.store');
     Route::post('/pagos-compras/{pago}/anular', [PurchaseController::class, 'cancelPayment'])->middleware('permission:compras')->name('pagos-compras.anular');
     Route::get('/compras/{compra}/editar-historial', [PurchaseController::class, 'editHistory'])->middleware('permission:compras')->name('compras.historial.edit');
     Route::put('/compras/{compra}/editar-historial', [PurchaseController::class, 'updateHistory'])->middleware('permission:compras')->name('compras.historial.update');
+    Route::get('/compras/{compra}/editar-productos', [PurchaseController::class, 'editProducts'])->middleware('permission:compras')->name('compras.productos.edit');
+    Route::put('/compras/{compra}/editar-productos', [PurchaseController::class, 'updateProducts'])->middleware('permission:compras')->name('compras.productos.update');
     Route::get('/compras/{compra}/recibo', [PurchaseController::class, 'recibo'])->middleware('permission:compras')->name('compras.recibo');
     Route::get('/compras/{compra}/pdf', [PurchaseController::class, 'pdf'])->middleware('permission:compras')->name('compras.pdf');
 
@@ -105,7 +117,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/reportes/ventas', [ReportController::class, 'ventas'])->name('reportes.ventas');
         Route::get('/reportes/documentos', [ReportController::class, 'documentos'])->middleware('permission:notas_facturas')->name('reportes.documentos');
         Route::get('/reportes/documentos/pdf', [ReportController::class, 'documentosPdf'])->middleware('permission:notas_facturas')->name('reportes.documentos.pdf');
+        Route::get('/reportes/notas-entrega/pdf', [ReportController::class, 'notasEntregaPdf'])->middleware('permission:notas_facturas')->name('reportes.notas-entrega.pdf');
         Route::get('/reportes/documentos/excel', [ReportController::class, 'documentosExcel'])->middleware('permission:notas_facturas')->name('reportes.documentos.excel');
+        Route::get('/reportes/gastos-operativos', [\App\Http\Controllers\OperationalExpenseController::class, 'index'])->middleware('permission:notas_facturas')->name('reportes.gastos-operativos');
+        Route::post('/reportes/gastos-operativos', [\App\Http\Controllers\OperationalExpenseController::class, 'store'])->middleware('permission:notas_facturas')->name('reportes.gastos-operativos.store');
+        Route::get('/reportes/gastos-operativos/{gasto}/pdf', [\App\Http\Controllers\OperationalExpenseController::class, 'pdf'])->middleware('permission:notas_facturas')->name('reportes.gastos-operativos.pdf');
         Route::get('/reportes/balance-mensual', [ReportController::class, 'balanceMensual'])->middleware('permission:balance_mensual')->name('reportes.balance-mensual');
         Route::get('/reportes/balance-mensual/pdf', [ReportController::class, 'balanceMensualPdf'])->middleware('permission:balance_mensual')->name('reportes.balance-mensual.pdf');
         Route::get('/reportes/balance-mensual/excel', [ReportController::class, 'balanceMensualExcel'])->middleware('permission:balance_mensual')->name('reportes.balance-mensual.excel');
@@ -115,10 +131,12 @@ Route::middleware('auth')->group(function () {
         Route::delete('/reportes/guardados/{reporte}', [ReportController::class, 'eliminarGuardado'])->name('reportes.guardados.destroy');
         Route::get('/reportes/inventario', [ReportController::class, 'inventario'])->name('reportes.inventario');
         Route::get('/reportes/stock-bajo/pdf', [ReportController::class, 'stockBajoPdf'])->name('reportes.stock-bajo.pdf');
-        Route::get('/reportes/kardex', [ReportController::class, 'kardex'])->middleware('permission:kardex')->name('reportes.kardex');
-        Route::get('/reportes/kardex/pdf', [ReportController::class, 'kardexPdf'])->middleware('permission:kardex')->name('reportes.kardex.pdf');
         Route::get('/reportes/compras', [ReportController::class, 'compras'])->name('reportes.compras');
     });
+
+    // Kardex is an independent permission: it must not require access to all reports.
+    Route::get('/reportes/kardex', [ReportController::class, 'kardex'])->middleware('permission:kardex')->name('reportes.kardex');
+    Route::get('/reportes/kardex/pdf', [ReportController::class, 'kardexPdf'])->middleware('permission:kardex')->name('reportes.kardex.pdf');
 
     Route::get('/configuracion', [SettingsController::class, 'edit'])->middleware('permission:configuracion')->name('configuracion.edit');
     Route::put('/configuracion', [SettingsController::class, 'update'])->middleware('permission:configuracion')->name('configuracion.update');

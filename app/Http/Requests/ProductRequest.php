@@ -16,7 +16,9 @@ class ProductRequest extends FormRequest
 
     public function authorize(): bool
     {
-        return $this->user()?->isAdmin() ?? false;
+        // Editing and creating products is controlled by the module
+        // permission. Google Authenticator is reserved for deletion actions.
+        return $this->user()?->hasPermission('productos') ?? false;
     }
 
     public function rules(): array
@@ -24,9 +26,9 @@ class ProductRequest extends FormRequest
         $producto = $this->route('producto');
 
         return [
-            'codigo' => ['required', 'string', 'max:255', Rule::unique('productos', 'codigo')->ignore($producto)],
+            'codigo' => [$producto ? 'required' : 'nullable', 'string', 'max:255', Rule::unique('productos', 'codigo')->ignore($producto)],
             'nombre' => ['required', 'string', 'max:255'],
-            'marca' => ['required', 'string', 'max:255'],
+            'marca' => ['nullable', 'string', 'max:255'],
             'procedencia' => ['required', 'string', 'max:255'],
             'categoria_id' => ['nullable', 'exists:categorias,id'],
             'descripcion' => ['nullable', 'string'],
@@ -42,20 +44,8 @@ class ProductRequest extends FormRequest
             'codigo_lote' => ['nullable', 'string', 'max:255'],
             'fecha_vencimiento' => ['nullable', 'date'],
             'activo' => ['nullable', 'boolean'],
+            'maneja_lote_universal' => ['nullable', 'boolean'],
         ];
     }
 
-    public function after(): array
-    {
-        return [
-            function ($validator): void {
-                $stockInicial = (float) $this->input('stock_inicial', 0);
-                $tieneLote = filled($this->input('codigo_lote')) || filled($this->input('fecha_vencimiento'));
-
-                if ($tieneLote && $stockInicial <= 0) {
-                    $validator->errors()->add('stock_inicial', 'Para registrar lote o vencimiento debe indicar stock inicial mayor a cero.');
-                }
-            },
-        ];
-    }
 }

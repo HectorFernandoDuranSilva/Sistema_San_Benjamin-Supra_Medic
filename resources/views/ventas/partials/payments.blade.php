@@ -1,7 +1,7 @@
 @if(! $cuotasDisponibles)
     <div class="card" style="margin-top:24px;"><p>Las cuotas y cobros estarán disponibles cuando termine la actualización de la base de datos.</p></div>
 @else
-<section id="cobros" style="margin-top:24px;">
+<section id="cobros" class="card" style="margin-top:24px;">
 @php($payments = $venta->cobros()->with('cuota')->orderBy('fecha')->orderBy('id')->get())
 @php($paid = $payments->where('estado', 'registrado')->sum('importe'))
 @php($installments = $venta->cuotas()->with('cobros')->orderBy('numero')->get())

@@ -71,7 +71,7 @@
                 <th>Disponible</th>
                 <th>Estado</th>
                 <th>Observación</th>
-                <th>Authenticator (guardar/eliminar)</th>
+                <th>Authenticator (solo eliminar)</th>
                 <th>Acciones</th>
             </tr>
         </thead>
@@ -107,12 +107,16 @@
                             <span class="pill" style="margin-top:6px;">Sin fecha</span>
                         @endif
                     </td>
-                    <td><div class="lote-primary">{{ number_format($lote->cantidad_inicial, 2) }}</div></td>
-                    <td><div class="lote-primary">{{ number_format((float) ($lote->cantidad_consumida ?? 0), 2) }}</div></td>
                     <td>
-                        @php($maxDisponible = max(0, round((float) $lote->cantidad_inicial - (float) ($lote->cantidad_consumida ?? 0), 2)))
-                        <input form="lote-edit-{{ $lote->id }}" type="number" step="0.01" min="0" max="{{ $maxDisponible }}" name="cantidad_disponible" value="{{ number_format((float) $lote->cantidad_disponible, 2, '.', '') }}">
-                        <small class="muted">Máx. {{ number_format($maxDisponible, 2) }}</small>
+                        <input form="lote-edit-{{ $lote->id }}" type="number" step="0.01" min="0" name="cantidad_inicial" value="{{ number_format((float) $lote->cantidad_inicial, 2, '.', '') }}">
+                    </td>
+                    <td>
+                        <input form="lote-edit-{{ $lote->id }}" type="number" step="0.01" min="{{ number_format((float) ($lote->cantidad_consumida_real ?? 0), 2, '.', '') }}" name="cantidad_consumida" value="{{ number_format((float) ($lote->cantidad_consumida ?? 0), 2, '.', '') }}">
+                        <small class="muted">Histórico: {{ number_format((float) ($lote->cantidad_consumida_real ?? 0), 2) }}</small>
+                    </td>
+                    <td>
+                        <input form="lote-edit-{{ $lote->id }}" type="number" step="0.01" min="0" name="cantidad_disponible" value="{{ number_format((float) $lote->cantidad_disponible, 2, '.', '') }}">
+                        <small class="muted">Inicial - consumido</small>
                     </td>
                     <td>
                         <select form="lote-edit-{{ $lote->id }}" name="estado">
@@ -121,16 +125,24 @@
                         </select>
                     </td>
                     <td><input form="lote-edit-{{ $lote->id }}" name="observacion" value="{{ $lote->observacion }}"></td>
-                    <td><input id="lote-totp-{{ $lote->id }}" form="lote-edit-{{ $lote->id }}" name="totp_code" inputmode="numeric" autocomplete="one-time-code" maxlength="32" placeholder="Código Authenticator" required></td>
+                    <td><small class="muted">Se solicita únicamente al eliminar.</small></td>
                     <td>
                         <div class="lote-actions">
                             <button form="lote-edit-{{ $lote->id }}" class="btn secondary">Guardar</button>
+                            @if($lote->estado === 'activo' && $lote->fecha_vencimiento && $lote->fecha_vencimiento->lt(today()) && (float) $lote->cantidad_disponible > 0)
+                                <form method="post" action="{{ route('inventario.lotes.dar-de-baja-vencido', $lote) }}" data-glass-confirm="Se retirarán {{ number_format((float) $lote->cantidad_disponible, 2) }} unidades por vencimiento y el lote quedará inactivo. ¿Desea continuar?">
+                                    @csrf
+                                    <button class="btn force-danger" type="submit">Dar de baja vencido</button>
+                                </form>
+                            @else
+                                <small class="muted" title="La baja se habilita cuando el lote tenga una fecha vencida y saldo disponible.">Baja por vencimiento: no disponible</small>
+                            @endif
                             <details class="force-delete">
                                 <summary>Eliminar</summary>
-                                <form class="lote-delete-form" method="post" action="{{ route('inventario.lotes.destroy', $lote) }}" data-code-source="lote-totp-{{ $lote->id }}" data-glass-confirm="Esta acción eliminará el lote. Si tiene movimientos históricos se conservará solo para mantener la trazabilidad. ¿Desea continuar?">
+                                <form class="lote-delete-form" method="post" action="{{ route('inventario.lotes.destroy', $lote) }}" data-glass-confirm="Esta acción eliminará el lote. Si tiene movimientos históricos se conservará solo para mantener la trazabilidad. ¿Desea continuar?">
                                     @csrf
                                     @method('delete')
-                                    <input type="hidden" name="totp_code">
+                                    <input name="totp_code" inputmode="numeric" autocomplete="one-time-code" maxlength="32" placeholder="Código Authenticator" required>
                                     <button class="btn force-danger">Eliminar lote</button>
                                 </form>
                             </details>
@@ -146,12 +158,5 @@
     <div class="pagination">{{ $lotes->links() }}</div>
 </div>
 <script>
-document.querySelectorAll('.lote-delete-form').forEach(function (form) {
-    form.addEventListener('submit', function () {
-        const source = document.getElementById(form.dataset.codeSource);
-        const target = form.querySelector('[name="totp_code"]');
-        if (source && target) target.value = source.value;
-    });
-});
 </script>
 @endsection

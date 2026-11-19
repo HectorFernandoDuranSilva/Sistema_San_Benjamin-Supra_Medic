@@ -24,6 +24,7 @@ tools
 vendor
 database/*.sqlite
 database/*.sqlite.*
+backups
 *.zip
 *.rar
 *.7z

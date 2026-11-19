@@ -17,7 +17,6 @@
         <div class="row">
             <div class="field"><label>Cliente</label><select name="cliente_id"><option value="">Sin cliente</option>@foreach($clientes as $cliente)<option value="{{ $cliente->id }}" @selected(old('cliente_id', $venta->cliente_id)==$cliente->id)>{{ $cliente->nombre_mostrable }}</option>@endforeach</select></div>
             <div class="field"><label>Lista de precios</label><input name="lista_precios" value="{{ old('lista_precios', $venta->lista_precios) }}"></div>
-            <div class="field"><label>Código de Google Authenticator</label><input name="totp_code" inputmode="numeric" maxlength="32" required></div>
         </div>
         <div class="field"><label>Comentario</label><textarea name="observacion">{{ old('observacion', $venta->observacion) }}</textarea></div>
         <div class="actions"><button class="btn">Guardar cabecera</button><a class="btn secondary" href="{{ route($venta->tipo_documento === 'nota_entrega' ? 'notas.show' : 'ventas.show', $venta) }}">Volver</a></div>

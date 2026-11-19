@@ -32,6 +32,15 @@
             'vencimiento' => $consumo->fecha_vencimiento,
             'cantidad' => $consumo->cantidad,
         ]))
+        ->concat($venta->detalles
+            ->filter(fn ($detalle) => $detalle->lotes->isEmpty() && filled($detalle->codigo_lote_manual))
+            ->map(fn ($detalle) => [
+                'codigo_producto' => $detalle->codigo_producto,
+                'producto' => $detalle->nombre_producto,
+                'lote' => $detalle->codigo_lote_manual,
+                'vencimiento' => $detalle->fecha_vencimiento_manual,
+                'cantidad' => $detalle->cantidad,
+            ]))
         ->values();
     $detailRows = max($detalles->count(), $lotes->isNotEmpty() ? 18 : 33);
 @endphp
@@ -57,6 +66,8 @@
     .green { background: {{ $brandColor }}; }
     .detail-header th { background: {{ $brandColor }}; border: 1px solid #000; font-size: 10px; font-weight: 700; text-align: center; height: 13px; }
     .detail td { border-left: 1px solid #000; border-right: 1px solid #000; height: 10px; font-size: 8px; line-height: 1.0; white-space: nowrap; overflow: hidden; }
+    .detail td.description,
+    .batch-table td.description { white-space: normal; overflow: visible; overflow-wrap: break-word; word-wrap: break-word; height: auto; }
     .detail-start td { border-top: 1px solid #000; }
     .detail-end td { border-bottom: 1px solid #000; }
     .batch-title { background: {{ $brandSoftColor }}; border-left: 1px solid #000; border-right: 1px solid #000; font-size: 9px; font-weight: 700; text-align: center; color: {{ $brandTitleColor }}; }
@@ -166,7 +177,7 @@
         @php $d = $detalles[$i] ?? null; @endphp
         <tr class="detail {{ $i === 0 ? 'detail-start' : '' }} {{ $i === $detailRows - 1 ? 'detail-end' : '' }}">
             <td class="center">{{ $d?->codigo_producto }}</td>
-            <td class="left">{{ $d?->nombre_producto }}</td>
+            <td class="left description">{{ $d?->nombre_producto }}{{ $d?->tarjeta_magnetica ? ' C/T' : '' }}</td>
             <td class="center">{{ $d?->producto?->medida }}</td>
             <td class="center">{{ $d ? $qty($d->cantidad) : '' }}</td>
             <td class="right">{{ $d ? $money($d->precio_unitario) : '' }}</td>
@@ -197,7 +208,7 @@
                         @php $lote = $batch->values()[$i] ?? null; @endphp
                         <tr>
                             <td class="center">{{ $lote['codigo_producto'] ?? '' }}</td>
-                            <td class="left">{{ $lote['producto'] ?? '' }}</td>
+                            <td class="left description">{{ $lote['producto'] ?? '' }}</td>
                             <td class="center">{{ $lote['lote'] ?? '' }}</td>
                             <td class="center">{{ $lote ? ($lote['vencimiento']?->format('d/m/Y') ?: 'Sin fecha') : '' }}</td>
                             <td class="center">{{ isset($lote['cantidad']) ? $qty($lote['cantidad']) : '' }}</td>

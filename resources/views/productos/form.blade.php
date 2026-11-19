@@ -6,6 +6,12 @@
     <div class="actions">
         <a class="btn secondary" href="{{ route('categorias.index') }}">Crear categoría</a>
     </div>
+    <div class="notice" style="margin-top:12px;">
+        <label style="display:flex;gap:8px;align-items:flex-start;">
+            <input style="width:auto;margin-top:3px;" type="checkbox" name="maneja_lote_universal" value="1" @checked(old('maneja_lote_universal', $producto->maneja_lote_universal ?? false))>
+            <span><strong>Usar lote universal acumulado</strong><br><small>Actívelo solo para productos sin lote ni vencimiento, como papel. Cada compra sumará al mismo lote universal.</small></span>
+        </label>
+    </div>
 </div>
 @if(isset($tipoCambioActual) && $tipoCambioActual)
     <div class="notice">Tipo de cambio vigente: Bs {{ number_format($tipoCambioActual->valor, 2) }}. Fuente: {{ $tipoCambioActual->fuente }}. Fecha: {{ $tipoCambioActual->fecha->format('d/m/Y') }}.</div>
@@ -18,13 +24,13 @@
     <h2 style="font-size:20px;margin:0 0 12px;">Identificación del producto</h2>
     <p class="muted" style="margin-top:-4px;">Complete el nombre, categoría, marca y procedencia para que el producto pueda encontrarse correctamente en compras, ventas, inventario y cotizaciones.</p>
     <div class="row">
-        <div class="field"><label>Código</label><input name="codigo" value="{{ old('codigo', $producto->codigo) }}" required></div>
+        <div class="field"><label>Código</label><input name="codigo" value="{{ old('codigo', $producto->exists ? $producto->codigo : $nextCodigo) }}" required><small class="muted">{{ $producto->exists ? 'Código del producto.' : 'Se propone el siguiente correlativo; puede cambiarlo si necesita otro código disponible.' }}</small></div>
         <div class="field"><label>Nombre</label><input name="nombre" value="{{ old('nombre', $producto->nombre) }}" required></div>
         <div class="field"><label>Categoría</label><select name="categoria_id"><option value="">Sin categoría</option>@foreach($categorias as $c)<option value="{{ $c->id }}" @selected(old('categoria_id', $producto->categoria_id)==$c->id)>{{ $c->nombre }}</option>@endforeach</select></div>
         <div class="field"><label>Medida</label><input name="medida" value="{{ old('medida', $producto->medida) }}"></div>
     </div>
     <div class="row">
-        <div class="field"><label for="marca">Marca</label><input id="marca" name="marca" maxlength="255" value="{{ old('marca', $producto->marca) }}" required></div>
+        <div class="field"><label for="marca">Marca <small class="muted">(opcional)</small></label><input id="marca" name="marca" maxlength="255" value="{{ old('marca', $producto->marca) }}"></div>
         <div class="field"><label for="procedencia">Procedencia</label><input id="procedencia" name="procedencia" maxlength="255" value="{{ old('procedencia', $producto->procedencia) }}" required></div>
     </div>
     <h2 style="font-size:20px;margin:18px 0 12px;">Costos y precios</h2>
@@ -62,7 +68,7 @@
         <form method="post" action="{{ route('productos.lotes.store', $producto) }}">
             @csrf
             <div class="row">
-                <div class="field"><label>Cantidad</label><input type="number" step="0.01" min="0.01" name="cantidad" value="{{ old('cantidad', 1) }}" required></div>
+                <div class="field"><label>Cantidad</label><input type="number" step="0.01" min="0" name="cantidad" value="{{ old('cantidad', 1) }}" required><small class="muted">Use 0 para documentar un lote existente sin modificar el stock.</small></div>
                 <div class="field"><label>Número de lote</label><input name="codigo_lote" value="{{ old('codigo_lote') }}"></div>
                 <div class="field"><label>Fecha de vencimiento</label><input type="date" name="fecha_vencimiento" value="{{ old('fecha_vencimiento') }}"></div>
                 <div class="field"><label>Costo unitario Bs</label><input type="number" step="0.01" min="0" name="costo_unitario" value="{{ old('costo_unitario', $producto->costo_referencial ?? 0) }}"></div>
@@ -105,7 +111,9 @@ function updateProductPrice() {
     const ingresoBs = parseFloat(document.getElementById('costo-ingreso-bs').value || '0');
     const cambio = parseFloat(document.getElementById('tipo-cambio').value || '0');
     const porcentaje = parseFloat(document.getElementById('porcentaje-utilidad').value || '0');
-    const costo = moneda === 'bs' ? ingresoBs : ingreso * cambio;
+    // Some historical products are marked USD but only have their real cost
+    // stored in Bs. Keep the suggestion visible instead of resetting it to 0.
+    const costo = moneda === 'bs' ? ingresoBs : (ingreso > 0 ? ingreso * cambio : ingresoBs);
     const precio = costo * (1 + (porcentaje / 100));
 
     document.getElementById('costo-referencial').value = costo.toFixed(2);

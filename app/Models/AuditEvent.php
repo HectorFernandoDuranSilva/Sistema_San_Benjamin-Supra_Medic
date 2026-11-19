@@ -33,4 +33,9 @@ class AuditEvent extends Model
     {
         return $this->belongsTo(User::class, 'user_id');
     }
+
+    public function auditable()
+    {
+        return $this->morphTo();
+    }
 }

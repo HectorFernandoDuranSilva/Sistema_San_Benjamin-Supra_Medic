@@ -31,6 +31,13 @@
         @if($esModuloNotas ?? false)<input type="hidden" name="tipo_documento" value="nota_entrega">@endif
         @if($facturaStockPendiente)<input type="hidden" name="tipo_documento" value="factura"><input type="hidden" name="factura_stock_pendiente" value="1">@endif
     </div>
+    <div class="field">
+        <label>Modalidad de stock</label>
+        <select id="modo-stock" name="modo_stock">
+            <option value="normal" @selected(old('modo_stock', ($facturaStockPendiente || $esNota) ? 'pendiente' : 'normal') === 'normal')>Stock normal</option>
+            <option value="pendiente" @selected(old('modo_stock', ($facturaStockPendiente || $esNota) ? 'pendiente' : 'normal') === 'pendiente')>Stock pendiente</option>
+        </select>
+    </div>
     <div class="field"><label>Fecha</label><input type="date" name="fecha" value="{{ old('fecha', now()->toDateString()) }}" required></div>
     <div class="field"><label id="etiqueta-documento">{{ $esNota ? 'Referencia de nota' : 'Factura' }}</label><input name="factura" value="{{ old('factura') }}"></div>
     <div class="field"><label>No.</label><input name="numero_venta" value="{{ old('numero_venta', $siguienteNumero) }}"></div>
@@ -69,6 +76,9 @@
         </select>
     </div>
     <div class="field"><label>Descuento %</label><input id="descuento-porcentaje" type="number" step="0.01" min="0" max="100" name="descuento_porcentaje" value="{{ old('descuento_porcentaje', 0) }}"></div>
+    <div class="field"><label>Tarjeta magnética</label><select name="tarjeta_magnetica"><option value="0">Sin tarjeta</option><option value="1" @selected(old('tarjeta_magnetica') === '1')>Con tarjeta</option></select></div>
+    <div class="field"><label>Marca tarjeta</label><select name="tipo_tarjeta"><option value="">-</option><option value="genrui" @selected(old('tipo_tarjeta') === 'genrui')>Genrui</option><option value="getein" @selected(old('tipo_tarjeta') === 'getein')>Getein</option></select></div>
+    <div class="field"><label>Destinatario tarjeta</label><input name="destinatario_tarjeta" value="{{ old('destinatario_tarjeta') }}" maxlength="255"></div>
     <div class="field">
         <label>Lista de precios</label>
         <select id="lista-precios" name="lista_precios">
@@ -109,12 +119,13 @@
 </div>
 
 <section id="entrega-sin-stock" class="card" style="margin:0 0 16px;" @if(!$facturaStockPendiente)hidden @endif>
-    <strong>{{ $facturaStockPendiente ? 'Factura con stock pendiente' : 'Nota de entrega sin stock' }}</strong>
+    <strong id="stock-mode-title">{{ $facturaStockPendiente ? 'Factura con stock pendiente' : 'Nota de entrega sin stock' }}</strong>
     @if($facturaStockPendiente)
         <p class="muted" style="margin:6px 0 10px;">Se registrará la factura aunque falte existencia. Cuando se reponga el producto, el inventario podrá regularizarse sin cambiar el documento.</p>
     @else
         <p class="muted" style="margin:6px 0 10px;">La nota se puede registrar aunque no exista stock. El inventario quedará pendiente y podrá regularizarse cuando ingrese el producto.</p>
     @endif
+    <p class="muted" style="margin:6px 0 10px;">El lote manual se guardará automáticamente en Inventario &gt; Lotes. Solo documenta el lote; no agrega existencias.</p>
     <p id="entrega-sin-stock-resumen" class="muted" style="margin:6px 0 10px;"></p>
     <label style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
         <input id="permitir-salida-sin-stock" type="checkbox" name="permitir_salida_sin_stock" value="1" @checked($facturaStockPendiente || old('permitir_salida_sin_stock')) @required($facturaStockPendiente)>
@@ -135,13 +146,13 @@
     <table id="items">
         <thead>
             <tr>
-                <th>Código</th><th>Producto</th><th>Marca</th><th>Procedencia</th><th>Medida</th><th>Lote</th><th>Vencimiento</th><th>Cantidad</th><th>Precio</th><th>Desc</th><th>Subtotal</th><th>Impuesto</th><th>Total</th><th>Costo envío</th><th>Otros costos</th><th></th>
+                <th>Código</th><th>Producto</th><th>C/T</th><th>Marca</th><th>Procedencia</th><th>Medida</th><th>Lote existente</th><th>Lote manual</th><th>Vencimiento</th><th>Cantidad</th><th>Precio</th><th>Desc</th><th>Subtotal</th><th>Impuesto</th><th>Total</th><th>Costo envío</th><th>Otros costos</th><th></th>
             </tr>
         </thead>
         <tbody></tbody>
         <tfoot>
             <tr>
-                <th colspan="9" style="text-align:right;">Totales</th>
+                <th colspan="11" style="text-align:right;">Totales</th>
                 <th id="total-descuento">0.00</th>
                 <th id="total-subtotal">0.00</th>
                 <th id="total-impuesto">0.00</th>
@@ -174,6 +185,7 @@ document.getElementById('tipo-documento').addEventListener('change', function ()
     document.getElementById('registrar-documento').textContent = esNota ? 'Registrar nota de entrega' : 'Registrar venta';
     updateDeliveryWithoutStock();
 });
+document.getElementById('modo-stock').addEventListener('change', updateDeliveryWithoutStock);
 const products = @json($productosVenta);
 const savedInstallments = @json(old('cuotas', []));
 
@@ -272,6 +284,10 @@ function addSelectedItem() {
     const precio = parseFloat(document.getElementById('precio-producto').value || selectedPrice(product) || '0');
     const envio = parseFloat(document.getElementById('costo-envio-producto').value || '0');
     const otros = parseFloat(document.getElementById('otros-costos-producto').value || '0');
+    const tarjeta = document.querySelector('[name="tarjeta_magnetica"]')?.value === '1';
+    const identificacionProducto = String(product.marca || '') + ' ' + String(product.nombre || '');
+    const tarjetaPermitida = identificacionProducto.trim().toLowerCase().includes('genrui')
+        || identificacionProducto.trim().toLowerCase().includes('getein');
     const lote = selectedLot(product);
     const vencimiento = document.getElementById('vencimiento-producto').value || '';
     const lotes = product.lotes || [];
@@ -282,11 +298,13 @@ function addSelectedItem() {
 
     tr.innerHTML = `
         <td>${product.codigo}<input type="hidden" name="items[${idx}][producto_id]" value="${product.id}"></td>
-        <td>${product.nombre}</td>
+        <td>${escapeHtml(product.nombre)}</td>
+        <td class="center"><label title="${tarjetaPermitida ? 'Marcar este producto con tarjeta' : 'C/T solo aplica a Genrui o Getein'}"><input type="checkbox" name="items[${idx}][tarjeta_magnetica]" value="1" ${tarjeta && tarjetaPermitida ? 'checked' : ''} ${tarjetaPermitida ? '' : 'disabled'}> ${tarjetaPermitida ? 'C/T' : 'No aplica'}</label></td>
         <td>${escapeHtml(product.marca || '-')}</td>
         <td>${escapeHtml(product.procedencia || '-')}</td>
         <td>${product.medida || ''}</td>
         <td><select class="item-lote" name="items[${idx}][inventario_lote_id]">${loteOptions}</select></td>
+        <td><input class="item-lote-manual" name="items[${idx}][codigo_lote_manual]" placeholder="Lote manual"></td>
         <td>${vencimientoInput}</td>
         <td><input class="item-cantidad" type="number" step="0.01" min="0.01" name="items[${idx}][cantidad]" value="${money(cantidad)}"></td>
         <td><input class="item-precio" type="number" step="0.01" min="0" name="items[${idx}][precio_unitario]" value="${money(precio)}"></td>
@@ -309,6 +327,13 @@ function addSelectedItem() {
     updateRow(tr);
     idx++;
 }
+
+document.querySelector('[name="tarjeta_magnetica"]')?.addEventListener('change', function () {
+    const marcado = this.value === '1';
+    document.querySelectorAll('#items tbody input[name$="[tarjeta_magnetica]"]').forEach(input => {
+        input.checked = marcado;
+    });
+});
 
 function updateRow(tr) {
     const cantidad = parseFloat(tr.querySelector('.item-cantidad').value || '0');
@@ -361,6 +386,10 @@ function updateTotals() {
 
 function updateDeliveryWithoutStock() {
     const documentType = document.getElementById('tipo-documento').value;
+    const pendingMode = document.getElementById('modo-stock').value === 'pendiente';
+    document.getElementById('stock-mode-title').textContent = pendingMode
+        ? (documentType === 'nota_entrega' ? 'Nota de entrega con stock pendiente' : 'Factura con stock pendiente')
+        : 'Stock insuficiente detectado';
     const section = document.getElementById('entrega-sin-stock');
     const checkbox = document.getElementById('permitir-salida-sin-stock');
     const reasonField = document.getElementById('motivo-salida-sin-stock-field');
@@ -379,13 +408,13 @@ function updateDeliveryWithoutStock() {
         return { product, shortage: quantity - available };
     }).filter(item => item.shortage > 0.0001);
 
-    const facturaStockPendiente = @json($facturaStockPendiente);
-    const needsException = facturaStockPendiente || (documentType === 'nota_entrega' && shortages.length > 0);
-    const notaSinStock = documentType === 'nota_entrega' && shortages.length > 0;
+    const facturaStockPendiente = pendingMode && documentType === 'factura';
+    const needsException = pendingMode || shortages.length > 0;
+    const notaSinStock = pendingMode && documentType === 'nota_entrega';
     section.hidden = !needsException;
     checkbox.disabled = !needsException;
     if (!needsException) checkbox.checked = false;
-    if (facturaStockPendiente) checkbox.checked = true;
+    if (pendingMode) checkbox.checked = true;
     if (notaSinStock) checkbox.checked = true;
     reason.disabled = !needsException || (!checkbox.checked && !notaSinStock);
     reason.required = needsException && checkbox.checked && !notaSinStock;

@@ -12,6 +12,7 @@ use App\Services\AuditLogService;
 use App\Services\SaleService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
@@ -87,12 +88,12 @@ class SaleController extends Controller
                 'price' => $p->precio_venta,
                 'cost' => $p->costo_referencial,
                 'suggested' => app(\App\Services\ProductPricingService::class)->suggestedReplacementPrice($p, $rate),
-                'lotes' => $p->lotes->map(fn ($lote) => [
-                    'id' => $lote->id,
-                    'codigo' => $lote->codigo_lote ?: 'sin lote',
-                    'fecha_vencimiento' => $lote->fecha_vencimiento?->format('Y-m-d'),
-                    'fecha_vencimiento_label' => $lote->fecha_vencimiento?->format('d/m/Y') ?? 'sin vencimiento',
-                    'cantidad_disponible' => $lote->cantidad_disponible,
+                'lotes' => $this->lotesConsolidados($p)->map(fn ($lote) => [
+                    'id' => $lote['id'],
+                    'codigo' => $lote['codigo'] ?: 'sin lote',
+                    'fecha_vencimiento' => $lote['fecha_vencimiento'],
+                    'fecha_vencimiento_label' => $lote['fecha_vencimiento'] ? \Carbon\Carbon::parse($lote['fecha_vencimiento'])->format('d/m/Y') : 'sin vencimiento',
+                    'cantidad_disponible' => $lote['cantidad_disponible'],
                 ])->values(),
             ])->values(),
             'commercial' => session('commercial_context'),
@@ -126,6 +127,12 @@ class SaleController extends Controller
             }
         } catch (InvalidArgumentException $e) {
             return back()->withErrors(['venta' => $e->getMessage()])->withInput();
+        } catch (QueryException $e) {
+            if ((string) $e->getCode() === '23000' || str_contains(strtolower($e->getMessage()), 'unique')) {
+                return back()->withErrors(['venta' => 'El consecutivo fue tomado por otra operación. Recargue la pantalla y vuelva a registrar la venta.'])->withInput();
+            }
+
+            throw $e;
         }
 
         $esNota = $venta->tipo_documento === 'nota_entrega';
@@ -152,17 +159,13 @@ class SaleController extends Controller
 
     public function editHistory(Venta $venta)
     {
-        return view('ventas.edit-history', [
-            'venta' => $venta->load('cliente'),
-            'clientes' => Cliente::where('activo', true)->orderBy('nombre')->get(),
-        ]);
+        return $this->editProducts($venta, false);
     }
 
-    public function updateHistory(Request $request, Venta $venta)
+    public function updateHistory(Request $request, Venta $venta, SaleService $service)
     {
         $data = $request->validate([
-            'totp_code' => ['required', 'string', 'max:32'],
-            'nombre_comercial' => ['nullable', 'string', 'max:255'],
+            'nombre_comercial' => ['required', 'in:San Benjamin,Supra Medic'],
             'tipo_documento' => ['nullable', 'in:factura,nota_entrega'],
             'cliente_id' => ['nullable', 'exists:clientes,id'],
             'fecha' => ['required', 'date'],
@@ -170,29 +173,145 @@ class SaleController extends Controller
             'nit_cliente' => ['nullable', 'string', 'max:255'],
             'lista_precios' => ['nullable', 'string', 'max:255'],
             'observacion' => ['nullable', 'string'],
+            'descuento_porcentaje' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'tipo_tarjeta' => ['nullable', 'in:genrui,getein'],
+            'destinatario_tarjeta' => ['nullable', 'string', 'max:255'],
+            'items' => ['nullable', 'array', 'min:1'],
+            'items.*.producto_id' => ['required_with:items', 'exists:productos,id'],
+            'items.*.cantidad' => ['required_with:items', 'numeric', 'gt:0'],
+            'items.*.precio_unitario' => ['required_with:items', 'numeric', 'min:0'],
+            'items.*.descuento' => ['nullable', 'numeric', 'min:0'],
+            'items.*.impuesto' => ['nullable', 'numeric', 'min:0'],
+            'items.*.costo_envio' => ['nullable', 'numeric', 'min:0'],
+            'items.*.otros_costos' => ['nullable', 'numeric', 'min:0'],
+            'items.*.inventario_lote_id' => ['nullable', 'integer', 'exists:inventario_lotes,id'],
+            'items.*.codigo_lote_manual' => ['nullable', 'string', 'max:255'],
+            'items.*.fecha_vencimiento_manual' => ['nullable', 'date'],
+            'items.*.tarjeta_magnetica' => ['nullable', 'boolean'],
         ]);
 
-        if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorizeAnyUser($request, 'ventas', $venta, 'Intento de editar historial de venta')) {
-            return back()->withErrors(['totp_code' => $error])->withInput();
+        $items = $data['items'] ?? null;
+        unset($data['items']);
+        $before = $venta->load('detalles.lotes')->toArray();
+
+        try {
+            DB::transaction(function () use ($venta, $data, $items, $request, $before, $service) {
+                $venta->update($data);
+                if ($items !== null) {
+                    $service->actualizarProductos($venta, $items, $request->user()->id);
+                }
+                $actualizada = $venta->fresh('detalles.lotes');
+                app(AuditLogService::class)->record(
+                    $request,
+                    $items === null ? 'actualizo' : 'actualizo_documento',
+                    'ventas',
+                    $venta,
+                    $before,
+                    $actualizada->toArray(),
+                    $items === null
+                        ? 'Edición de cabecera de documento'
+                        : 'Edición integral de documento, productos, lotes e inventario'
+                );
+            });
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['venta' => $e->getMessage()])->withInput();
         }
 
-        $before = $venta->only(['nombre_comercial', 'tipo_documento', 'cliente_id', 'fecha', 'factura', 'nit_cliente', 'lista_precios', 'observacion']);
-        unset($data['totp_code']);
-        DB::transaction(function () use ($venta, $data, $request, $before) {
-            $venta->update($data);
-            app(AuditLogService::class)->record(
-                $request,
-                'actualizo',
-                'ventas',
-                $venta,
-                $before,
-                $venta->only(array_keys($before)),
-                'Edición segura de cabecera de documento'
-            );
-        });
-
         return redirect()->route($venta->tipo_documento === 'nota_entrega' ? 'notas.show' : 'ventas.show', $venta)
-            ->with('ok', $venta->tipo_documento === 'nota_entrega' ? 'Nota de entrega actualizada sin modificar inventario.' : 'Cabecera de venta actualizada sin modificar inventario.');
+            ->with('ok', $items === null
+                ? ($venta->tipo_documento === 'nota_entrega' ? 'Nota de entrega actualizada.' : 'Cabecera de venta actualizada.')
+                : ($venta->tipo_documento === 'nota_entrega' ? 'Nota de entrega actualizada correctamente.' : 'Venta actualizada correctamente.'));
+    }
+
+    public function editProducts(Venta $venta, bool $enforced = true)
+    {
+        $puedeEditarProductos = $venta->estado === 'registrada'
+            && ! $venta->cobros()->where('estado', 'registrado')->exists()
+            && ! $venta->cuotas()->exists();
+        if ($enforced) {
+            abort_unless($venta->estado === 'registrada', 422, 'Solo se pueden editar documentos registrados.');
+            abort_unless($puedeEditarProductos, 422, 'Regularice los cobros o cuotas antes de editar los productos.');
+        }
+
+        $productoIdsActuales = $venta->detalles()->pluck('producto_id')->filter()->values();
+        $rate = (float) (TipoCambio::where('estado', 'vigente')->latest('fecha')->latest('id')->value('valor') ?: TipoCambio::ultimoValor());
+        $productos = Producto::with(['lotes' => fn ($query) => $query
+            ->where('estado', 'activo')
+            ->orderByRaw('CASE WHEN fecha_vencimiento IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('fecha_vencimiento')
+            ->orderBy('id'),
+        ])->where('activo', true)
+            ->orWhereIn('id', $productoIdsActuales)
+            ->orderBy('nombre')
+            ->get();
+        $venta->load('detalles.producto', 'detalles.lotes.lote');
+        $itemsEditor = $venta->detalles->map(function ($detalle) {
+            $asignacion = $detalle->lotes->first();
+
+            return [
+                'producto_id' => $detalle->producto_id,
+                'cantidad' => $detalle->cantidad,
+                'precio_unitario' => $detalle->precio_unitario,
+                'descuento' => $detalle->descuento,
+                'impuesto' => $detalle->impuesto,
+                'costo_envio' => $detalle->costo_envio,
+                'otros_costos' => $detalle->otros_costos,
+                'inventario_lote_id' => $asignacion?->inventario_lote_id,
+                'codigo_lote_manual' => $detalle->codigo_lote_manual,
+                'fecha_vencimiento_manual' => $detalle->fecha_vencimiento_manual?->format('Y-m-d'),
+                'tarjeta_magnetica' => $detalle->tarjeta_magnetica,
+            ];
+        })->values()->all();
+
+        return view('ventas.edit-products', [
+            'venta' => $venta,
+            'clientes' => Cliente::where('activo', true)->orderBy('nombre')->get(),
+            'puedeEditarProductos' => $puedeEditarProductos,
+            'productos' => $productos,
+            'productosEditor' => $productos->map(fn ($producto) => [
+                'id' => $producto->id,
+                'codigo' => $producto->codigo,
+                'nombre' => $producto->nombre,
+                'precio_venta' => $producto->precio_venta,
+                'costo_referencial' => $producto->costo_referencial,
+                'precio_sugerido' => app(\App\Services\ProductPricingService::class)->suggestedReplacementPrice($producto, $rate),
+                'lotes' => $this->lotesConsolidados($producto)->map(fn ($lote) => [
+                    'id' => $lote['id'],
+                    'codigo' => $lote['codigo'] ?: 'Sin lote',
+                    'vencimiento' => $lote['fecha_vencimiento'],
+                    'disponible' => $lote['cantidad_disponible'],
+                ])->values(),
+            ])->values(),
+            'itemsEditor' => $itemsEditor,
+        ]);
+    }
+
+    public function updateProducts(Request $request, Venta $venta, SaleService $service)
+    {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.producto_id' => ['required', 'exists:productos,id'],
+            'items.*.cantidad' => ['required', 'numeric', 'gt:0'],
+            'items.*.precio_unitario' => ['required', 'numeric', 'min:0'],
+            'items.*.descuento' => ['nullable', 'numeric', 'min:0'],
+            'items.*.impuesto' => ['nullable', 'numeric', 'min:0'],
+            'items.*.costo_envio' => ['nullable', 'numeric', 'min:0'],
+            'items.*.otros_costos' => ['nullable', 'numeric', 'min:0'],
+            'items.*.inventario_lote_id' => ['nullable', 'integer', 'exists:inventario_lotes,id'],
+            'items.*.codigo_lote_manual' => ['nullable', 'string', 'max:255'],
+            'items.*.fecha_vencimiento_manual' => ['nullable', 'date'],
+            'items.*.tarjeta_magnetica' => ['nullable', 'boolean'],
+        ]);
+
+        try {
+            $before = $venta->load('detalles')->toArray();
+            $service->actualizarProductos($venta, $data['items'], $request->user()->id);
+            app(AuditLogService::class)->record($request, 'actualizo_productos', 'ventas', $venta, $before, $venta->fresh('detalles')->toArray(), 'Edición de productos, cantidades e inventario del documento');
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['items' => $e->getMessage()])->withInput();
+        }
+
+        return redirect()->route($venta->tipo_documento === 'nota_entrega' ? 'notas.show' : 'ventas.show', $venta)->with('ok', 'Productos del documento actualizados correctamente.');
     }
 
     public function anular(Request $request, Venta $venta, SaleService $service)
@@ -216,16 +335,51 @@ class SaleController extends Controller
         return back()->with('ok', $venta->tipo_documento === 'nota_entrega' ? 'Nota de entrega anulada y stock devuelto.' : 'Venta anulada y stock devuelto.');
     }
 
-    public function convertirAFactura(Request $request, Venta $venta)
+    public function cerrarStockPendiente(Request $request, Venta $venta, AuditLogService $audit)
     {
         $data = $request->validate([
             'totp_code' => ['required', 'string', 'max:32'],
-            'factura' => ['nullable', 'string', 'max:255'],
+            'motivo' => ['required', 'string', 'max:255'],
         ]);
 
-        if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'ventas', $venta, 'Intento de convertir nota de entrega en factura')) {
+        if ($error = app(\App\Services\TwoFactorAuthenticationService::class)->authorize($request, 'ventas', $venta, 'Intento de cerrar stock pendiente sin entrada')) {
             return back()->withErrors(['totp_code' => $error]);
         }
+
+        try {
+            DB::transaction(function () use ($request, $venta, $audit, $data): void {
+                $venta = Venta::with('detalles')->whereKey($venta->id)->lockForUpdate()->firstOrFail();
+                $pendientes = $venta->detalles->filter(fn ($detalle) => (float) $detalle->faltante_stock > 0);
+                if (! $venta->permitir_salida_sin_stock || $pendientes->isEmpty()) {
+                    throw new InvalidArgumentException('Este documento no tiene stock pendiente para cerrar.');
+                }
+
+                $before = $pendientes->mapWithKeys(fn ($detalle) => [$detalle->id => (float) $detalle->faltante_stock])->all();
+                foreach ($pendientes as $detalle) {
+                    $detalle->update(['faltante_stock' => 0]);
+                }
+                $audit->record(
+                    $request,
+                    'cerro_stock_pendiente',
+                    'ventas',
+                    $venta,
+                    ['faltante_stock' => $before],
+                    ['faltante_stock' => []],
+                    'Stock pendiente cerrado sin entrada de inventario: '.$data['motivo']
+                );
+            });
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['venta' => $e->getMessage()]);
+        }
+
+        return back()->with('ok', 'Stock pendiente cerrado con auditoría y sin modificar el inventario.');
+    }
+
+    public function convertirAFactura(Request $request, Venta $venta)
+    {
+        $data = $request->validate([
+            'factura' => ['nullable', 'string', 'max:255'],
+        ]);
 
         try {
             DB::transaction(function () use ($request, $venta, $data): void {
@@ -319,5 +473,33 @@ class SaleController extends Controller
             'venta' => $venta->load('cliente', 'detalles.producto', 'detalles.lotes.lote', 'usuario'),
             'empresa' => ConfiguracionEmpresa::firstOrCreate([]),
         ];
+    }
+
+    /**
+     * A product can have several historical entries with the same lot code.
+     * The operator must see one usable lot with the combined balance, while
+     * retaining the first id so the inventory service can consume the group
+     * and continue with the remaining matching entries automatically.
+     */
+    private function lotesConsolidados(Producto $producto): \Illuminate\Support\Collection
+    {
+        return $producto->lotes
+            ->groupBy(fn ($lote) => mb_strtoupper(trim((string) ($lote->codigo_lote ?: 'SIN LOTE'))) . '|' . ($lote->fecha_vencimiento?->format('Y-m-d') ?: 'SIN FECHA'))
+            ->map(function ($lotes) {
+                // A consolidated lot can contain an exhausted historical row
+                // followed by a row with the current balance. The id sent to
+                // the sale form must point to a usable row, not merely the
+                // oldest row in the group.
+                $primero = $lotes->first(fn ($lote): bool => (float) $lote->cantidad_disponible > 0)
+                    ?? $lotes->first();
+
+                return [
+                    'id' => $primero->id,
+                    'codigo' => $primero->codigo_lote,
+                    'fecha_vencimiento' => $primero->fecha_vencimiento?->format('Y-m-d'),
+                    'cantidad_disponible' => round((float) $lotes->sum('cantidad_disponible'), 2),
+                ];
+            })
+            ->values();
     }
 }

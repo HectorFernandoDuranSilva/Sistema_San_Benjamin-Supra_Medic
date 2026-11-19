@@ -11,6 +11,8 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class CustomerHistoryController extends Controller
 {
@@ -86,9 +88,192 @@ class CustomerHistoryController extends Controller
             ->values();
 
         return view('clientes.cobros', [
+            'clientes' => Cliente::where('activo', true)->orderBy('nombre')->get(),
             'documentos' => $documentos,
             'filtros' => $request->only(['buscar', 'tipo_documento', 'nombre_comercial']),
         ]);
+    }
+
+    public function storeCustomerPayment(Request $request, AuditLogService $audit)
+    {
+        $data = $request->validate([
+            'cliente_id' => ['required', 'integer', 'exists:clientes,id'],
+            'venta_id' => ['nullable', 'integer', 'exists:ventas,id'],
+            'fecha' => ['required', 'date', 'before_or_equal:today'],
+            'importe' => ['required', 'numeric', 'decimal:0,2', 'gt:0', 'max:999999999'],
+            'medio' => ['required', 'in:efectivo,transferencia,deposito'],
+            'referencia' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        try {
+            DB::transaction(function () use ($request, $audit, $data): void {
+                $cliente = Cliente::whereKey($data['cliente_id'])->where('activo', true)->firstOrFail();
+                $remaining = (int) round((float) $data['importe'] * 100);
+                $commercial = session('commercial_context.name');
+
+                $ventas = Venta::query()
+                    ->where('cliente_id', $cliente->id)
+                    ->where('estado', 'registrada')
+                    ->when($commercial, fn ($query, $name) => $query->where('nombre_comercial', $name))
+                    ->when($data['venta_id'] ?? null, fn ($query, $ventaId) => $query->whereKey($ventaId))
+                    ->with(['cuotas.cobros'])
+                    ->orderBy('fecha')
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
+
+                if (($data['venta_id'] ?? null) && $ventas->isEmpty()) {
+                    throw new InvalidArgumentException('La factura o nota seleccionada no pertenece al cliente indicado o no está pendiente.');
+                }
+
+                $saldoTotal = 0;
+                foreach ($ventas as $venta) {
+                    $saldoTotal += (int) round((float) $venta->total * 100);
+                    $saldoTotal -= (int) round((float) $venta->cobros()->where('estado', 'registrado')->sum('importe') * 100);
+                }
+                if ($remaining > $saldoTotal) {
+                    throw new InvalidArgumentException('El pago supera el saldo pendiente del cliente o de la factura seleccionada.');
+                }
+
+                $aplicaciones = 0;
+                foreach ($ventas as $venta) {
+                    if ($remaining <= 0) {
+                        break;
+                    }
+
+                    $saldoVenta = (int) round((float) $venta->total * 100);
+                    $saldoVenta -= (int) round((float) $venta->cobros()->where('estado', 'registrado')->sum('importe') * 100);
+                    if ($saldoVenta <= 0) {
+                        continue;
+                    }
+
+                    $cuotas = $venta->cuotas->sortBy('numero');
+                    if ($cuotas->isNotEmpty()) {
+                        foreach ($cuotas as $cuota) {
+                            if ($remaining <= 0) {
+                                break;
+                            }
+                            $saldoCuota = (int) round((float) $cuota->importe * 100);
+                            $saldoCuota -= (int) round((float) $cuota->cobros->where('estado', 'registrado')->sum('importe') * 100);
+                            if ($saldoCuota <= 0) {
+                                continue;
+                            }
+                            $aplicar = min($remaining, $saldoCuota);
+                            $this->crearCobroCliente($venta, $cuota->id, $aplicar, $data, $request, $audit);
+                            $remaining -= $aplicar;
+                            $aplicaciones++;
+                        }
+                    } else {
+                        $aplicar = min($remaining, $saldoVenta);
+                        $this->crearCobroCliente($venta, null, $aplicar, $data, $request, $audit);
+                        $remaining -= $aplicar;
+                        $aplicaciones++;
+                    }
+                }
+
+                if ($aplicaciones === 0 || $remaining > 0) {
+                    throw new InvalidArgumentException('No se encontraron documentos con saldo pendiente para este cliente.');
+                }
+            });
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['importe' => $e->getMessage()])->withInput();
+        }
+
+        return back()->with('ok', 'Pago del cliente registrado y aplicado a sus documentos pendientes.');
+    }
+
+    public function settleCustomerAccount(Request $request, AuditLogService $audit)
+    {
+        $data = $request->validate([
+            'cliente_id' => ['required', 'integer', 'exists:clientes,id'],
+            'confirmar' => ['accepted'],
+        ]);
+
+        try {
+            $settled = DB::transaction(function () use ($request, $audit, $data): int {
+                $cliente = Cliente::whereKey($data['cliente_id'])->where('activo', true)->lockForUpdate()->firstOrFail();
+                $ventas = Venta::where('cliente_id', $cliente->id)
+                    ->where('estado', 'registrada')
+                    ->with(['cobros', 'cuotas.cobros'])
+                    ->orderBy('fecha')->orderBy('id')->lockForUpdate()->get();
+
+                $totalFiniquitado = 0;
+                foreach ($ventas as $venta) {
+                    $saldoVenta = (int) round((float) $venta->total * 100)
+                        - (int) round((float) $venta->cobros->where('estado', 'registrado')->sum('importe') * 100);
+                    if ($saldoVenta <= 0) {
+                        continue;
+                    }
+
+                    $cuotas = $venta->cuotas->sortBy('numero');
+                    foreach ($cuotas as $cuota) {
+                        if ($saldoVenta <= 0) {
+                            break;
+                        }
+                        $saldoCuota = (int) round((float) $cuota->importe * 100)
+                            - (int) round((float) $cuota->cobros->where('estado', 'registrado')->sum('importe') * 100);
+                        if ($saldoCuota <= 0) {
+                            continue;
+                        }
+                        $aplicar = min($saldoVenta, $saldoCuota);
+                        $this->crearFiniquito($venta, $cuota->id, $aplicar, $request, $audit);
+                        $saldoVenta -= $aplicar;
+                        $totalFiniquitado += $aplicar;
+                    }
+
+                    if ($saldoVenta > 0) {
+                        $this->crearFiniquito($venta, null, $saldoVenta, $request, $audit);
+                        $totalFiniquitado += $saldoVenta;
+                    }
+                }
+
+                if ($totalFiniquitado <= 0) {
+                    throw new InvalidArgumentException('La cuenta ya está finiquitada y no tiene saldo pendiente.');
+                }
+
+                $audit->record($request, 'finiquito_cuenta_cliente', 'ventas', $cliente, null, [
+                    'cliente_id' => $cliente->id,
+                    'importe' => $totalFiniquitado / 100,
+                    'documentos' => $ventas->count(),
+                ], 'Cuenta finiquitada por autorización');
+
+                return $totalFiniquitado;
+            });
+        } catch (InvalidArgumentException $e) {
+            return back()->withErrors(['cliente_id' => $e->getMessage()])->withInput();
+        }
+
+        return back()->with('ok', 'Cuenta finiquitada. Saldo regularizado: Bs ' . number_format($settled / 100, 2));
+    }
+
+    private function crearFiniquito(Venta $venta, ?int $cuotaId, int $importeCentavos, Request $request, AuditLogService $audit): void
+    {
+        $cobro = $venta->cobros()->create([
+            'cuota_id' => $cuotaId,
+            'usuario_id' => $request->user()->id,
+            'token' => (string) Str::uuid(),
+            'fecha' => now()->toDateString(),
+            'importe' => $importeCentavos / 100,
+            'medio' => 'finiquito',
+            'referencia' => 'Finiquito autorizado',
+            'estado' => 'registrado',
+        ]);
+        $audit->record($request, 'registro_finiquito', 'ventas', $cobro, null, $cobro->toArray(), 'Regularización de saldo por finiquito de cuenta');
+    }
+
+    private function crearCobroCliente(Venta $venta, ?int $cuotaId, int $importeCentavos, array $data, Request $request, AuditLogService $audit): void
+    {
+        $cobro = $venta->cobros()->create([
+            'cuota_id' => $cuotaId,
+            'usuario_id' => $request->user()->id,
+            'token' => (string) Str::uuid(),
+            'fecha' => $data['fecha'],
+            'importe' => $importeCentavos / 100,
+            'medio' => $data['medio'],
+            'referencia' => $data['referencia'] ?? null,
+            'estado' => 'registrado',
+        ]);
+        $audit->record($request, 'registro_cobro_cliente', 'ventas', $cobro, null, $cobro->toArray(), 'Pago registrado por cliente y aplicado a documento');
     }
 
     public function pdf(Request $request)

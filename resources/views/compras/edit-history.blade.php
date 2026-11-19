@@ -16,7 +16,6 @@
         </div>
         <div class="row">
             <div class="field"><label>Proveedor</label><select name="proveedor_id"><option value="">Sin proveedor</option>@foreach($proveedores as $proveedor)<option value="{{ $proveedor->id }}" @selected(old('proveedor_id', $compra->proveedor_id)==$proveedor->id)>{{ $proveedor->nombre }}</option>@endforeach</select></div>
-            <div class="field"><label>Código de Google Authenticator</label><input name="totp_code" inputmode="numeric" maxlength="32" required></div>
         </div>
         <div class="field"><label>Comentario</label><textarea name="observacion">{{ old('observacion', $compra->observacion) }}</textarea></div>
         <div class="actions"><button class="btn">Guardar cabecera</button><a class="btn secondary" href="{{ route('compras.show', $compra) }}">Volver</a></div>

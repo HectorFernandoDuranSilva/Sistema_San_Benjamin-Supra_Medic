@@ -36,10 +36,11 @@
     <div class="line"></div>
 
     <table>
-        <tr><th>Ventas facturadas</th><th>Compras facturadas</th><th>Diferencia</th><th>IVA 13%</th><th>IT 3%</th><th>Por pagar</th></tr>
+        <tr><th>Ventas facturadas</th><th>Compras facturadas</th><th>Gastos operativos</th><th>Diferencia</th><th>IVA 13%</th><th>IT 3%</th><th>Por pagar</th></tr>
         <tr>
             <td class="num">Bs {{ number_format($totales['ventas_facturas'], 2) }}</td>
             <td class="num">Bs {{ number_format($totales['compras_facturas'], 2) }}</td>
+            <td class="num">Bs {{ number_format($totales['gastos_operativos'], 2) }}</td>
             <td class="num">Bs {{ number_format($totales['diferencia_tributaria'], 2) }}</td>
             <td class="num">Bs {{ number_format($totales['iva_estimado'], 2) }}</td>
             <td class="num">Bs {{ number_format($totales['it_estimado'], 2) }}</td>
@@ -47,56 +48,50 @@
         </tr>
     </table>
 
+    <h2>Notas de entrega</h2>
+    <p class="note">Total informativo de notas de entrega: <strong>Bs {{ number_format($totales['notas_entrega'], 2) }}</strong>. No se suma a ventas facturadas, compras facturadas, IVA, IT, por pagar ni resultado comercial.</p>
+
     <h2>Detalle por nombre comercial</h2>
     <table>
         <tr>
             <th>Nombre comercial</th>
             <th>Ventas facturas</th>
-            <th>Ventas notas</th>
             <th>Compras facturas</th>
-            <th>Compras notas</th>
+            <th>Gastos operativos</th>
             <th>Diferencia</th>
             <th>IVA 13%</th>
             <th>IT 3%</th>
             <th>Por pagar</th>
-            <th>Total ventas</th>
-            <th>Total compras</th>
             <th>Resultado</th>
         </tr>
         @foreach($porNombre as $item)
             <tr>
                 <td>{{ $item['nombre_comercial'] }}</td>
                 <td class="num">Bs {{ number_format($item['ventas_facturas'], 2) }}</td>
-                <td class="num">Bs {{ number_format($item['ventas_notas'], 2) }}</td>
                 <td class="num">Bs {{ number_format($item['compras_facturas'], 2) }}</td>
-                <td class="num">Bs {{ number_format($item['compras_notas'], 2) }}</td>
+                <td class="num">Bs {{ number_format($item['gastos_operativos'], 2) }}</td>
                 <td class="num">Bs {{ number_format($item['diferencia_tributaria'], 2) }}</td>
                 <td class="num">Bs {{ number_format($item['iva_estimado'], 2) }}</td>
                 <td class="num">Bs {{ number_format($item['it_estimado'], 2) }}</td>
                 <td class="num {{ $item['por_pagar'] < 0 ? 'negative' : '' }}">Bs {{ number_format($item['por_pagar'], 2) }}</td>
-                <td class="num">Bs {{ number_format($item['ventas_total'], 2) }}</td>
-                <td class="num">Bs {{ number_format($item['compras_total'], 2) }}</td>
                 <td class="num">Bs {{ number_format($item['resultado'], 2) }}</td>
             </tr>
         @endforeach
         <tr>
             <th>Total</th>
             <th class="num">Bs {{ number_format($totales['ventas_facturas'], 2) }}</th>
-            <th class="num">Bs {{ number_format($totales['ventas_notas'], 2) }}</th>
             <th class="num">Bs {{ number_format($totales['compras_facturas'], 2) }}</th>
-            <th class="num">Bs {{ number_format($totales['compras_notas'], 2) }}</th>
+            <th class="num">Bs {{ number_format($totales['gastos_operativos'], 2) }}</th>
             <th class="num">Bs {{ number_format($totales['diferencia_tributaria'], 2) }}</th>
             <th class="num">Bs {{ number_format($totales['iva_estimado'], 2) }}</th>
             <th class="num">Bs {{ number_format($totales['it_estimado'], 2) }}</th>
             <th class="num {{ $totales['por_pagar'] < 0 ? 'negative' : '' }}">Bs {{ number_format($totales['por_pagar'], 2) }}</th>
-            <th class="num">Bs {{ number_format($totales['ventas_total'], 2) }}</th>
-            <th class="num">Bs {{ number_format($totales['compras_total'], 2) }}</th>
             <th class="num">Bs {{ number_format($totales['resultado'], 2) }}</th>
         </tr>
     </table>
 
     <h2>Referencia tributaria</h2>
-    <p class="note">Cálculo interno sobre facturas: compras menos ventas, IVA 13%, IT 3% sobre ventas y Por pagar como suma de IVA más IT. Las notas de entrega se mantienen separadas.</p>
+    <p class="note">Cálculo interno solo sobre facturas: compras menos ventas, IVA 13%, IT 3% sobre ventas y Por pagar como suma de IVA más IT. Las notas de entrega se consultan por separado en Notas/Facturas y no ingresan a este balance.</p>
     <table>
         <tr><th>Concepto</th><th>Total</th></tr>
         <tr><td>Diferencia (compras - ventas)</td><td class="num">Bs {{ number_format($totales['diferencia_tributaria'], 2) }}</td></tr>
