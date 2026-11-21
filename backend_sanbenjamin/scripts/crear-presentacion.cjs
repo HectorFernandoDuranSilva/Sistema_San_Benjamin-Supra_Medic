@@ -48,14 +48,20 @@ text('Diagrama generado en DBeaver sobre PostgreSQL · esquema public · base si
 base('Enlaces y datos de acceso','04 · Ejecución local');
 card(42,132,410,230,'Frontend','http://127.0.0.1:5174/\n\nDirectorio: frontend_sanbenjamin\nTecnología: Vue 3 + Axios + Bootstrap', '#EAF7FB');
 card(508,132,410,230,'Backend','http://127.0.0.1:3000/api\n\nDirectorio: backend_sanbenjamin\nTecnología: NestJS + Prisma + JWT', '#EAF7FB');
-doc.roundedRect(42,392,876,55,10).fill(C.navy); text('Usuario de demostración: hector',62,411,300,15,C.white,{bold:true}); text('Contraseña: hector123',610,411,250,15,C.white,{bold:true,align:'right'}); footer(5);
+doc.roundedRect(42,392,876,78,10).fill(C.navy); text('Usuario de demostración: hector',62,408,360,15,C.white,{bold:true}); text('Contraseña: hector123',610,408,250,15,C.white,{bold:true,align:'right'}); text('GitHub: https://github.com/HectorFernandoDuranSilva/Sistema_San_Benjamin-Supra_Medic',62,442,820,11,C.white); footer(5);
 
 // 6. Evidence
 base('Pruebas de funcionamiento','05 · Evidencias para la demostración');
 text('Pruebas ejecutadas',42,128,220,16,C.navy,{bold:true});
-const rows = [['Login y dashboard','Correcto','Indicadores y balance mensual cargan desde PostgreSQL'],['Compra y venta','Correcto','La compra incrementa stock y la venta lo descuenta'],['Edición de documentos','Correcto','Venta y compra se editaron desde el historial'],['Recibos','Correcto','Vista previa HTML y descarga PDF disponibles'],['Backend / frontend','Correcto','6 suites, 8 pruebas y builds exitosos'],['Consola del navegador','Correcto','Sin errores ni advertencias']];
-let y=160; rows.forEach((r,i)=>{doc.rect(42,y,520,32).fill(i%2?'#FFFFFF':'#EAF7FB').strokeColor(C.line).stroke(); text(r[0],54,y+9,170,11,C.navy,{bold:true}); text(r[1],238,y+9,80,11,C.green,{bold:true}); text(r[2],330,y+9,220,10,C.ink); y+=32;});
-text('Evidencia de base de datos',610,128,250,16,C.navy,{bold:true}); const pg = 'C:/Users/Pc/AppData/Local/Temp/codex-clipboard-94dc3e77-f638-4f6d-9ad6-267e9250e16f.png'; if(fs.existsSync(pg)) doc.image(pg,610,158,{fit:[300,105],align:'center',valign:'center'}); else text('PostgreSQL conectado en pgAdmin',610,180,260,14,C.ink); text('Frontend · flujo de compra',610,278,260,12,C.navy,{bold:true}); const front = path.join(root,'tmp-video-review','video1-30.jpg'); if(fs.existsSync(front)) doc.image(front,610,300,{fit:[300,105],align:'center',valign:'center'}); text('La importación Excel no forma parte de esta entrega, según la indicación recibida.',42,382,850,13,C.muted,{bold:true}); text('El sistema queda listo para la demostración práctica de compra, venta y control de inventario.',42,430,850,17,C.navy,{bold:true}); footer(6);
+const rows = [['Login y dashboard','Correcto','Indicadores cargan desde PostgreSQL'],['Compra y venta','Correcto','Stock actualizado en ambos flujos'],['Edición de documentos','Correcto','Compra y venta editables'],['Recibos','Correcto','Vista previa y PDF disponibles'],['Backend / frontend','Correcto','6 suites, 8 pruebas y builds'],['Consola del navegador','Correcto','Sin errores ni advertencias']];
+let y=160; rows.forEach((r,i)=>{doc.rect(42,y,500,28).fill(i%2?'#FFFFFF':'#EAF7FB').strokeColor(C.line).stroke(); text(r[0],54,y+8,165,10,C.navy,{bold:true}); text(r[1],225,y+8,75,10,C.green,{bold:true}); text(r[2],310,y+8,220,9,C.ink); y+=28;});
+text('Capturas de pruebas',570,128,300,16,C.navy,{bold:true});
+const pg = 'C:/Users/Pc/AppData/Local/Temp/codex-clipboard-94dc3e77-f638-4f6d-9ad6-267e9250e16f.png';
+const purchase = path.join(root,'tmp-video-review','video1-20.jpg');
+const purchaseLot = path.join(root,'tmp-video-review','video1-0.jpg');
+const receipt = path.join(root,'output','pdf','verificacion-recibo-lotes-1.png');
+const shots = [[pg,'PostgreSQL / pgAdmin'],[purchase,'Registro de compra'],[purchaseLot,'Compra con lote'],[receipt,'Recibo y vencimiento']];
+shots.forEach((s,i)=>{const x=570+(i%2)*174; const yy=160+Math.floor(i/2)*142; text(s[1],x,yy,164,9,C.navy,{bold:true}); if(fs.existsSync(s[0])) doc.image(s[0],x,yy+18,{fit:[164,100],align:'center',valign:'center'});}); footer(6);
 
 doc.end();
 console.log(output);

@@ -1,0 +1,5 @@
+backend_sanbenjamin/node_modules/
+backend_sanbenjamin/dist/
+backend_sanbenjamin/.env
+frontend_sanbenjamin/node_modules/
+frontend_sanbenjamin/dist/
